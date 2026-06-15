@@ -1,0 +1,40 @@
+# 依赖
+node_modules
+.pnpm-store
+dist
+build
+out
+
+# 环境变量
+.env
+.env.local
+.env.production
+.env.development
+
+# Prisma
+prisma/*.db
+prisma/*.journal
+src/generated/
+
+# 日志
+logs
+*.log
+
+# OS 文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 上传静态资源（本地图片不提交）
+uploads/
+
+# Redis/Pg 本地缓存dump
+dump.rdb
+
+# Docker临时/覆盖文件
+docker-compose.override.yml
