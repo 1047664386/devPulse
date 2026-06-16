@@ -1,0 +1,12 @@
+# ── Dev overrides ──
+# Exposes DB/Redis ports for local tools (pgAdmin, RedisInsight, etc.)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+
+  redis:
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
