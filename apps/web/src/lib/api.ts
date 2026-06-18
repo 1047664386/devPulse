@@ -4,6 +4,7 @@ import type { ApiError, ApiResponse } from '@/types/api';
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true, // 自动携带 HttpOnly Cookie（refreshToken）
 });
 
 // Attach accessToken to every request
@@ -53,18 +54,19 @@ api.interceptors.response.use(
     original._retry = true;
     isRefreshing = true;
 
-    const refreshToken = sessionStorage.getItem('refreshToken');
-    if (!refreshToken) {
-      clearAuth();
-      return Promise.reject(error);
-    }
-
     try {
-      const { data } = await axios.post('/api/v1/auth/refresh', { refreshToken });
-      // 新格式：data.data 包含实际的 refreshToken 和 accessToken
+      // 分层兼容：Cookie 模式下浏览器自动携带 refreshToken，body 作为兜底
+      const refreshToken = sessionStorage.getItem('refreshToken');
+      const { data } = await axios.post('/api/v1/auth/refresh', 
+        refreshToken ? { refreshToken } : {},
+        { withCredentials: true },
+      );
       const payload = data.data || data;
       sessionStorage.setItem('accessToken', payload.accessToken);
-      sessionStorage.setItem('refreshToken', payload.refreshToken);
+      // refreshToken 可能从 body 更新（兼容模式），Cookie 模式下由浏览器自动管理
+      if (payload.refreshToken) {
+        sessionStorage.setItem('refreshToken', payload.refreshToken);
+      }
       processQueue(null);
       return api(original);
     } catch (refreshError) {

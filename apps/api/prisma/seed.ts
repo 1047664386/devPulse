@@ -1,7 +1,12 @@
+// 加载.env环境变量，读取DATABASE_URL等数据库配置
 import 'dotenv/config';
+// Prisma 客户端生成文件，提供完整数据库CRUD类型化API
 import { PrismaClient } from '../src/generated/prisma/client';
+// PostgreSQL适配器，分离驱动与Prisma核心，适配pg原生驱动
 import { PrismaPg } from '@prisma/adapter-pg';
+// 密码哈希加密工具，用于生成用户加密密码
 import * as bcrypt from 'bcrypt';
+// 权限系统常量：全部权限标识、角色权限映射、权限描述、系统内置角色配置
 import {
   ALL_PERMISSIONS,
   ROLE_PERMISSIONS,
@@ -9,26 +14,47 @@ import {
   SYSTEM_ROLES,
 } from '../src/common/constants/permissions';
 
+/**
+ * 数据库连接字符串，从环境变量读取，非空断言确保启动时配置存在
+ */
 const connectionString = process.env.DATABASE_URL!;
+/**
+ * 初始化PostgreSQL适配器，传入数据库连接地址
+ */
 const adapter = new PrismaPg({ connectionString });
+/**
+ * 实例化Prisma客户端，绑定Postgres适配器，用于所有数据库操作
+ */
 const prisma = new PrismaClient({ adapter });
 
-// Fixed UUIDs for idempotent seeding
+/**
+ * 固定静态UUID
+ * 用于评论、通知等演示数据，保证每次执行seed主键不变，实现幂等填充
+ * 重复执行脚本不会因为主键冲突报错
+ */
 const COMMENT_1_ID = 'a1111111-1111-1111-1111-111111111111';
 const COMMENT_2_ID = 'a2222222-2222-2222-2222-222222222222';
 const NOTIF_1_ID = 'b1111111-1111-1111-1111-111111111111';
 const NOTIF_2_ID = 'b2222222-2222-2222-2222-222222222222';
 
+/**
+ * 数据库初始化填充主函数
+ * 幂等设计：全部使用upsert，重复执行不会产生重复数据、不会报错
+ * 填充顺序：角色 → 权限 → 角色权限关联 → 测试用户 → 标签 → 文章 → 互动数据(点赞/收藏/评论/关注/通知)
+ */
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // ── Roles ──────────────────────────────────────
-
+  // ── 1. 初始化系统内置角色 ──────────────────────────────────────
   console.log('  Seeding roles...');
+  // 遍历系统角色常量，幂等插入/更新角色
   for (const [, config] of Object.entries(SYSTEM_ROLES)) {
     await prisma.role.upsert({
+      // 根据角色唯一名称匹配已有数据
       where: { name: config.name },
+      // 存在则更新描述、系统角色标识
       update: { description: config.description, isSystem: config.isSystem },
+      // 不存在则新建角色
       create: {
         name: config.name,
         description: config.description,
@@ -38,15 +64,19 @@ async function main() {
   }
   console.log(`  ✅ ${Object.keys(SYSTEM_ROLES).length} roles upserted`);
 
-  // ── Permissions & Role Mappings ─────────────────
-
+  // ── 2. 初始化权限集合 & 绑定角色权限关联 ─────────────────
   console.log('  Seeding permissions...');
+  // 批量插入/更新全部权限定义
   for (const perm of ALL_PERMISSIONS) {
+    // 权限格式 resource:action，拆分资源与操作
     const [resource, ...actionParts] = perm.split(':');
     const action = actionParts.join(':');
     await prisma.permission.upsert({
+      // 联合唯一键 resource + action 匹配权限
       where: { resource_action: { resource, action } },
+      // 更新权限描述文案
       update: { description: PERMISSION_DESCRIPTIONS[perm] ?? null },
+      // 新建权限记录
       create: {
         resource,
         action,
@@ -56,17 +86,24 @@ async function main() {
   }
   console.log(`  ✅ ${ALL_PERMISSIONS.length} permissions upserted`);
 
+  // 查询全部角色、全部权限，构建映射表方便快速匹配ID
   const allRoles = await prisma.role.findMany();
   const allPerms = await prisma.permission.findMany();
-  const permMap = new Map(allPerms.map((p: any) => [`${p.resource}:${p.action}`, p.id]));
+  // key: resource:action 权限标识，value: 权限ID
+  const permMap = new Map(allPerms.map((p) => [`${p.resource}:${p.action}`, p.id]));
 
+  // 给每个系统角色绑定对应权限（先清空旧关联，再批量创建）
   for (const [roleName, perms] of Object.entries(ROLE_PERMISSIONS)) {
     const role = allRoles.find((r) => r.name === roleName);
+    // 不存在该角色则跳过
     if (!role) continue;
 
+    // 根据权限标识数组转换为权限ID数组，过滤空值
     const permIds = perms.map((p) => permMap.get(p)).filter(Boolean) as string[];
     if (permIds.length > 0) {
+      // 删除当前角色所有旧权限关联
       await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+      // 批量插入新权限关联
       await prisma.rolePermission.createMany({
         data: permIds.map((pid) => ({ roleId: role.id, permissionId: pid })),
       });
@@ -74,11 +111,11 @@ async function main() {
   }
   console.log('  ✅ Role-permission mappings seeded');
 
-  // ── Users ────────────────────────────────────────
-
-  // Helper: find role id by name
+  // ── 3. 初始化测试用户：管理员、作者、读者 ────────────────────────────────────────
+  // 角色名称→角色ID映射工具，快速分配用户角色
   const roleMap = new Map(allRoles.map((r) => [r.name, r.id]));
 
+  // 1. 超级管理员账号 admin@devpulse.com
   const adminPassword = await bcrypt.hash('Admin123!', 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@devpulse.com' },
@@ -91,6 +128,7 @@ async function main() {
       bio: 'Platform administrator',
     },
   });
+  // 给管理员绑定ADMIN角色（多对多关联幂等创建）
   await prisma.userRole.upsert({
     where: { userId_roleId: { userId: admin.id, roleId: roleMap.get('ADMIN')! } },
     update: {},
@@ -98,6 +136,7 @@ async function main() {
   });
   console.log('  ✅ Admin created:', admin.email);
 
+  // 2. 作者账号 author@devpulse.com
   const authorPassword = await bcrypt.hash('Author123!', 12);
   const author = await prisma.user.upsert({
     where: { email: 'author@devpulse.com' },
@@ -117,6 +156,7 @@ async function main() {
   });
   console.log('  ✅ Author created:', author.email);
 
+  // 3. 第二位作者 dbexpert@devpulse.com
   const author2Password = await bcrypt.hash('Author123!', 12);
   const author2 = await prisma.user.upsert({
     where: { email: 'dbexpert@devpulse.com' },
@@ -136,6 +176,7 @@ async function main() {
   });
   console.log('  ✅ Author2 created:', author2.email);
 
+  // 4. 普通读者账号 reader@devpulse.com
   const readerPassword = await bcrypt.hash('Reader123!', 12);
   const reader = await prisma.user.upsert({
     where: { email: 'reader@devpulse.com' },
@@ -154,8 +195,8 @@ async function main() {
   });
   console.log('  ✅ Reader created:', reader.email);
 
-  // ── Tags ─────────────────────────────────────────
-
+  // ── 4. 初始化文章标签 Tag ─────────────────────────────────────────
+  // 批量创建技术标签，包含名称、路由别名、描述、主题色
   const tags = await Promise.all([
     prisma.tag.upsert({ where: { name: 'React' }, update: {}, create: { name: 'React', slug: 'react', description: 'React frontend framework for building user interfaces', color: '#61DAFB' } }),
     prisma.tag.upsert({ where: { name: 'NestJS' }, update: {}, create: { name: 'NestJS', slug: 'nestjs', description: 'Progressive Node.js framework for building server-side applications', color: '#E0234E' } }),
@@ -164,15 +205,15 @@ async function main() {
     prisma.tag.upsert({ where: { name: 'Redis' }, update: {}, create: { name: 'Redis', slug: 'redis', description: 'In-memory data structure store, used as database and cache', color: '#DC382D' } }),
     prisma.tag.upsert({ where: { name: 'Docker' }, update: {}, create: { name: 'Docker', slug: 'docker', description: 'Container platform for building and deploying applications', color: '#2496ED' } }),
   ]);
-  console.log('  ✅ Tags created:', tags.map((t: { name: string }) => t.name).join(', '));
+  console.log('  ✅ Tags created:', tags.map((t) => t.name).join(', '));
 
-  // ── Articles ─────────────────────────────────────
-
+  // ── 5. 初始化演示文章 Article ─────────────────────────────────────
+  // 演示文章数组：标题、路由、HTML正文、摘要、作者ID、关联标签、浏览点赞统计
   const articles = [
     {
       title: '深入理解 React Hooks 闭包陷阱',
       slug: 'understanding-react-hooks-closure',
-      content: '<h2>什么是闭包陷阱？</h2><p>在 React Hooks 中，闭包陷阱是最常见的 bug 来源之一。当我们在 useEffect 或 useCallback 中引用了 state 变量，但没有正确设置依赖数组时，就会遇到"过期闭包"问题。</p><h2>常见场景</h2><h3>1. useEffect 中的过期 state</h3><p>当 useEffect 的依赖数组为空时，回调函数中的 state 值会被"冻结"在组件初次渲染时的值。这意味着即使 state 已经更新，useEffect 中仍然只能访问到旧值。</p><h3>2. useCallback 中的旧值</h3><p>类似地，useCallback 缓存的函数中引用的 state 也可能是过期的。这在事件处理函数中特别常见。</p><h2>解决方案</h2><p>1. 正确设置依赖数组<br/>2. 使用 useRef 保存最新值<br/>3. 使用函数式更新 setState(prev =&gt; prev + 1)</p><p>通过理解闭包的工作原理，我们可以更好地避免这些陷阱，写出更可靠的 React 代码。</p>',
+      content: '<h2>什么是闭包陷阱？</h2><p>在 React Hooks 中，闭包陷阱是最常见的 bug 来源之一。当我们在 useEffect 或 useCallback 中引用了 state 变量，但没有正确设置依赖数组时，就会遇到"过期闭包"问题。</p><h2>常见场景</h2><h3>1. useEffect 中的过期 state</h3><p>当 useEffect 的依赖数组为空时，回调函数中的 state 值会被"冻结"在组件初次渲染时的值。这意味着即使 state 已经更新，useEffect 中仍然只能访问到旧值。</p><h3>2. useCallback 中的旧值</h3><p>类似地，useCallback 缓存的函数中引用的 state 也可能是过期的。这在事件处理函数中特别常见。</p><h2>解决方案</h2><p>1. 正确设置依赖数组<br/>2. 使用 useRef 保存最新值<br/>3. 使用函数式更新 setState(prev => prev + 1)</p><p>通过理解闭包的工作原理，我们可以更好地避免这些陷阱，写出更可靠的 React 代码。</p>',
       summary: '本文深入分析了 React Hooks 中常见的闭包陷阱及其解决方案。',
       authorId: author.id,
       tagIds: [tags[0].id, tags[2].id],
@@ -211,23 +252,30 @@ async function main() {
     },
   ];
 
+  // 循环创建每一篇文章，关联对应标签
   for (const articleData of articles) {
+    // 拆分标签ID数组，剩余字段为文章基础信息
     const { tagIds, ...data } = articleData;
     const article = await prisma.article.upsert({
+      // 根据唯一路由slug匹配文章
       where: { slug: data.slug },
       update: {},
       create: {
         ...data,
+        // 文章默认发布状态
         status: 'PUBLISHED',
+        // 随机发布时间：7天内随机时间戳
         publishedAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
+        // 估算阅读时长：纯文字每200字1分钟，最少1分钟
         readTimeMinutes: Math.max(1, Math.ceil(data.content.replace(/<[^>]*>/g, '').length / 200)),
+        // 关联多标签
         tags: { connect: tagIds.map((id) => ({ id })) },
       },
     });
     console.log(`  ✅ Article created: ${article.title}`);
   }
 
-  // Update tag article counts
+  // 重新计算每个标签下已发布、未删除文章数量，同步更新tag.articleCount
   for (const tag of tags) {
     const count = await prisma.article.count({
       where: { tags: { some: { id: tag.id } }, status: 'PUBLISHED', deletedAt: null },
@@ -236,32 +284,32 @@ async function main() {
   }
   console.log('  ✅ Tag article counts updated');
 
-  // ── Interactions ─────────────────────────────────
-
-  // Reader likes an article
+  // ── 6. 用户互动演示数据：点赞、收藏、关注、评论、通知 ─────────────────────────────────
+  // 读取第一篇文章作为互动载体
   const firstArticle = await prisma.article.findFirst({ where: { slug: 'understanding-react-hooks-closure' } });
   if (firstArticle) {
+    // 读者点赞文章
     await prisma.like.upsert({
       where: { userId_articleId: { userId: reader.id, articleId: firstArticle.id } },
       update: {},
       create: { userId: reader.id, articleId: firstArticle.id },
     });
 
-    // Reader bookmarks an article
+    // 读者收藏文章
     await prisma.bookmark.upsert({
       where: { userId_articleId: { userId: reader.id, articleId: firstArticle.id } },
       update: {},
       create: { userId: reader.id, articleId: firstArticle.id },
     });
 
-    // Reader follows author
+    // 读者关注作者
     await prisma.follow.upsert({
       where: { followerId_followingId: { followerId: reader.id, followingId: author.id } },
       update: {},
       create: { followerId: reader.id, followingId: author.id },
     });
 
-    // Reader comments on article
+    // 读者一级评论，使用固定UUID保证幂等
     const comment = await prisma.comment.upsert({
       where: { id: COMMENT_1_ID },
       update: {},
@@ -273,7 +321,7 @@ async function main() {
       },
     });
 
-    // Author replies to comment
+    // 作者回复评论，二级评论，parentId关联上级评论
     await prisma.comment.upsert({
       where: { id: COMMENT_2_ID },
       update: {},
@@ -286,7 +334,7 @@ async function main() {
       },
     });
 
-    // Notifications
+    // 通知1：收到评论通知
     await prisma.notification.upsert({
       where: { id: NOTIF_1_ID },
       update: {},
@@ -300,6 +348,7 @@ async function main() {
       },
     });
 
+    // 通知2：新增粉丝关注通知
     await prisma.notification.upsert({
       where: { id: NOTIF_2_ID },
       update: {},
@@ -316,12 +365,18 @@ async function main() {
   }
 
   console.log('\n✅ Seeding complete!');
+  // 输出所有测试账号登录信息，方便开发调试
   console.log('  admin@devpulse.com / Admin123!   (ADMIN)');
   console.log('  author@devpulse.com / Author123! (AUTHOR)');
   console.log('  dbexpert@devpulse.com / Author123! (AUTHOR)');
   console.log('  reader@devpulse.com / Reader123! (READER)');
 }
 
+/**
+ * 执行填充脚本入口
+ * 异常捕获：打印错误码并退出进程
+ * finally：无论成功失败，断开Prisma数据库连接，释放连接池
+ */
 main()
   .catch((e) => {
     console.error('❌ Seed failed:', e);

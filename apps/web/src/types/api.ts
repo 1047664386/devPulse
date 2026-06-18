@@ -117,6 +117,15 @@ export interface RefreshRequest {
   refreshToken: string;
 }
 
+export interface Session {
+  deviceId: string;
+  deviceName: string;
+  platform: string;
+  ip: string;
+  loginAt: string;
+  lastActiveAt: string;
+}
+
 // ==================== Article ====================
 
 export type ArticleStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';

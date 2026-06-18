@@ -728,14 +728,6 @@ export type EnumArticleStatusFieldUpdateOperationsInput = {
   set?: $Enums.ArticleStatus
 }
 
-export type IntFieldUpdateOperationsInput = {
-  set?: number
-  increment?: number
-  decrement?: number
-  multiply?: number
-  divide?: number
-}
-
 export type ArticleCreateNestedManyWithoutTagsInput = {
   create?: Prisma.XOR<Prisma.ArticleCreateWithoutTagsInput, Prisma.ArticleUncheckedCreateWithoutTagsInput> | Prisma.ArticleCreateWithoutTagsInput[] | Prisma.ArticleUncheckedCreateWithoutTagsInput[]
   connectOrCreate?: Prisma.ArticleCreateOrConnectWithoutTagsInput | Prisma.ArticleCreateOrConnectWithoutTagsInput[]

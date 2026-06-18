@@ -3,7 +3,7 @@ import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { hasRole } from '@/types/api';
-import { notificationApi } from '@/lib/api-services';
+import { notificationApi, authApi } from '@/lib/api-services';
 import { cn } from '@/lib/utils';
 import {
   Bell,
@@ -50,7 +50,14 @@ export default function MainLayout() {
   });
   const unreadCount = unreadData?.count ?? 0;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // 先通知后端单设备下线，再清除本地状态
+    const refreshToken = sessionStorage.getItem('refreshToken');
+    try {
+      await authApi.logout(refreshToken ?? undefined);
+    } catch {
+      // 即使后端不可达也要清除本地状态
+    }
     logout();
     navigate('/');
   };

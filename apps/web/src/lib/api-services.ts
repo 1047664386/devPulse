@@ -18,6 +18,7 @@ import type {
   RoleListItem,
   SearchResult,
   SearchSuggestion,
+  Session,
   Tag,
   ToggleResponse,
   UpdateArticleRequest,
@@ -33,7 +34,21 @@ import type {
 
 export const authApi = {
   getMe: () => api.get<ApiResponse<User>>('/auth/me').then((r) => r.data.data),
-  logout: () => api.post('/auth/logout'),
+
+  /** 登出当前设备（传 refreshToken，服务端解码出 deviceId 单设备下线） */
+  logout: (refreshToken?: string) =>
+    api.post('/auth/logout', refreshToken ? { refreshToken } : {}),
+
+  /** 强制所有设备下线 */
+  logoutAll: () => api.post('/auth/logout-all'),
+
+  /** 获取所有活跃设备会话 */
+  getSessions: () =>
+    api.get<ApiResponse<Session[]>>('/auth/sessions').then((r) => r.data.data),
+
+  /** 注销指定设备 */
+  logoutDevice: (deviceId: string) =>
+    api.delete(`/auth/sessions/${deviceId}`),
 };
 
 // ==================== Articles ====================

@@ -1428,6 +1428,7 @@ export const UserScalarFieldEnum = {
   isBanned: 'isBanned',
   bannedAt: 'bannedAt',
   banReason: 'banReason',
+  tokenVersion: 'tokenVersion',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -1646,20 +1647,6 @@ export type ListDateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaM
 
 
 /**
- * Reference to a field of type 'ArticleStatus'
- */
-export type EnumArticleStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ArticleStatus'>
-    
-
-
-/**
- * Reference to a field of type 'ArticleStatus[]'
- */
-export type ListEnumArticleStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ArticleStatus[]'>
-    
-
-
-/**
  * Reference to a field of type 'Int'
  */
 export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
@@ -1670,6 +1657,20 @@ export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'In
  * Reference to a field of type 'Int[]'
  */
 export type ListIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int[]'>
+    
+
+
+/**
+ * Reference to a field of type 'ArticleStatus'
+ */
+export type EnumArticleStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ArticleStatus'>
+    
+
+
+/**
+ * Reference to a field of type 'ArticleStatus[]'
+ */
+export type ListEnumArticleStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ArticleStatus[]'>
     
 
 

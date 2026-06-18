@@ -1,14 +1,46 @@
 import { useState, useRef } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { getRoleNames } from '@/types/api';
-import { profileApi } from '@/lib/api-services';
+import { profileApi, authApi } from '@/lib/api-services';
+import { useNavigate } from 'react-router-dom';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 import Avatar from '@/components/ui/Avatar';
+import { Monitor, Smartphone, Globe, Trash2 } from 'lucide-react';
+
+/** 根据 platform 选择图标 */
+function PlatformIcon({ platform }: { platform: string }) {
+  switch (platform) {
+    case 'iOS':
+    case 'Android':
+      return <Smartphone className="w-4 h-4 text-gray-400" />;
+    case 'macOS':
+    case 'Windows':
+    case 'Linux':
+      return <Monitor className="w-4 h-4 text-gray-400" />;
+    default:
+      return <Globe className="w-4 h-4 text-gray-400" />;
+  }
+}
+
+/** 格式化时间为相对时间 */
+function timeAgo(dateStr: string): string {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  return `${days} 天前`;
+}
 
 export default function SettingsPage() {
-  const { user, updateUser } = useAuthStore();
+  const { user, updateUser, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -41,17 +73,38 @@ export default function SettingsPage() {
     },
   });
 
+  // 修改密码后，后端会自动全部下线，前端需要重新登录
   const changePasswordMutation = useMutation({
     mutationFn: () => profileApi.changePassword({ currentPassword, newPassword }),
     onSuccess: () => {
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setPwdMessage({ type: 'success', text: '密码已修改' });
-      setTimeout(() => setPwdMessage(null), 2000);
+      setPwdMessage({ type: 'success', text: '密码已修改，请重新登录' });
+      setTimeout(() => {
+        logout();
+        navigate('/login');
+      }, 1500);
     },
     onError: (err: Error) => {
       setPwdMessage({ type: 'error', text: err.message || '密码修改失败' });
+    },
+  });
+
+  // ─── Device Sessions ─────────────────────────────
+  const { data: sessions = [] } = useQuery({
+    queryKey: ['sessions'],
+    queryFn: authApi.getSessions,
+    enabled: !!user,
+  });
+
+  const revokeDeviceMutation = useMutation({
+    mutationFn: (deviceId: string) => authApi.logoutDevice(deviceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+  });
+
+  const logoutAllMutation = useMutation({
+    mutationFn: () => authApi.logoutAll(),
+    onSuccess: () => {
+      logout();
+      navigate('/login');
     },
   });
 
@@ -74,7 +127,6 @@ export default function SettingsPage() {
     if (file) {
       avatarMutation.mutate(file);
     }
-    // Reset so the same file can be selected again
     e.target.value = '';
   };
 
@@ -136,6 +188,7 @@ export default function SettingsPage() {
       {/* Password section */}
       <section className="bg-white rounded-lg border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">修改密码</h2>
+        <p className="text-sm text-gray-500 mb-4">修改密码后所有设备将自动下线，需要重新登录。</p>
         <div className="space-y-4">
           <Input label="当前密码" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
           <Input label="新密码" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 位，含大小写和数字" />
@@ -149,6 +202,57 @@ export default function SettingsPage() {
             )}
           </div>
         </div>
+      </section>
+
+      {/* Device Sessions section */}
+      <section className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">登录设备</h2>
+          {sessions.length > 1 && (
+            <button
+              onClick={() => {
+                if (confirm('确认退出所有设备？你需要在当前设备重新登录。')) {
+                  logoutAllMutation.mutate();
+                }
+              }}
+              disabled={logoutAllMutation.isPending}
+              className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+            >
+              退出所有设备
+            </button>
+          )}
+        </div>
+
+        {sessions.length === 0 ? (
+          <p className="text-sm text-gray-400">暂无活跃设备</p>
+        ) : (
+          <div className="space-y-3">
+            {sessions.map((session) => (
+              <div
+                key={session.deviceId}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+              >
+                <div className="flex items-center gap-3">
+                  <PlatformIcon platform={session.platform} />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{session.deviceName}</p>
+                    <p className="text-xs text-gray-500">
+                      {session.ip} &middot; 登录于 {timeAgo(session.loginAt)} &middot; 最近活跃 {timeAgo(session.lastActiveAt)}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => revokeDeviceMutation.mutate(session.deviceId)}
+                  disabled={revokeDeviceMutation.isPending}
+                  className="p-1.5 text-gray-400 hover:text-red-500 transition disabled:opacity-50"
+                  title="下线此设备"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Account info */}

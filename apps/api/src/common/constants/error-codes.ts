@@ -20,6 +20,11 @@
  *   code === 0  → 成功
  *   code !== 0  → 失败
  *   code 为纯数字，不含英文
+ *
+ * HTTP 状态码策略（混合模式）：
+ *   HTTP 状态码保留标准 REST 语义（404 就是 404、400 就是 400）
+ *   code 字段提供细粒度业务语义（区分"文章不存在"还是"评论不存在"）
+ *   两者不冲突，互补使用
  */
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -42,6 +47,7 @@ export const ErrRateLimited       = 1004; // 请求过于频繁
 export const ErrSystemBusy        = 1005; // 系统繁忙，请稍后重试
 export const ErrServiceUnavailable = 1006; // 服务暂不可用
 export const ErrDataConflict      = 1010; // 数据冲突（唯一约束）
+export const ErrForbidden         = 1011; // 没有操作权限（通用权限不足）
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  20001~20099 — 认证与令牌
@@ -55,6 +61,8 @@ export const ErrTokenRevoked      = 20014; // 令牌已被撤销
 export const ErrTokenReuse        = 20015; // 令牌重用检测，所有会话已撤销
 export const ErrEmailRegistered   = 20020; // 邮箱已被注册
 export const ErrUsernameTaken     = 20021; // 用户名已被占用
+export const ErrDeviceLimit       = 20022; // 设备数量超过上限
+export const ErrSessionNotFound   = 20023; // 会话不存在
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  30001~30099 — 用户与资料
@@ -118,8 +126,7 @@ export const ErrDatabaseError   = 99001; // 数据库异常
 export const ErrRedisError      = 99002; // 缓存服务异常
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  错误码 → 对外脱敏消息 映射表
-//  （对外只展示这些消息，内部日志记详细信息）
+//  错误码 → 对外脱敏消息
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export const ERROR_MESSAGES: Record<number, string> = {
   [ErrSuccess]:           '操作成功',
@@ -131,6 +138,7 @@ export const ERROR_MESSAGES: Record<number, string> = {
   [ErrSystemBusy]:        '系统繁忙，请稍后重试',
   [ErrServiceUnavailable]:'服务暂不可用',
   [ErrDataConflict]:      '数据冲突',
+  [ErrForbidden]:         '没有操作权限',
 
   [ErrNotAuthenticated]:  '请先登录',
   [ErrEmailOrPwdWrong]:   '邮箱或密码错误',
@@ -141,6 +149,8 @@ export const ERROR_MESSAGES: Record<number, string> = {
   [ErrTokenReuse]:        '检测到账号在其他设备登录',
   [ErrEmailRegistered]:   '该邮箱已被注册',
   [ErrUsernameTaken]:     '该用户名已被占用',
+  [ErrDeviceLimit]:       '设备数量超过上限',
+  [ErrSessionNotFound]:   '会话不存在',
 
   [ErrUserNotFound]:      '用户不存在',
   [ErrCannotFollowSelf]:  '不能关注自己',
@@ -176,3 +186,93 @@ export const ERROR_MESSAGES: Record<number, string> = {
   [ErrDatabaseError]:  '服务异常，请稍后重试',
   [ErrRedisError]:     '服务异常，请稍后重试',
 };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  错误码 → 默认 HTTP 状态码
+//
+//  原则：HTTP 状态码保留标准 REST 语义
+//    400 = 客户端请求有误（参数校验、业务规则不满足）
+//    401 = 未认证（未登录、令牌失效）
+//    403 = 已认证但无权限（封禁、无权操作）
+//    404 = 资源不存在
+//    409 = 数据冲突（唯一约束、乐观锁）
+//    429 = 请求过于频繁
+//    500 = 服务端异常
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export const ERROR_HTTP_STATUS: Record<number, number> = {
+  // 通用
+  [ErrParamInvalid]:      400,
+  [ErrParamMissing]:      400,
+  [ErrMethodNotAllowed]:  405,
+  [ErrRateLimited]:       429,
+  [ErrSystemBusy]:        503,
+  [ErrServiceUnavailable]: 503,
+  [ErrDataConflict]:      409,
+  [ErrForbidden]:         403,
+
+  // 认证 — 401
+  [ErrNotAuthenticated]:  401,
+  [ErrEmailOrPwdWrong]:   401,
+  [ErrTokenExpired]:      401,
+  [ErrTokenInvalid]:      401,
+  [ErrTokenRevoked]:      401,
+  [ErrTokenReuse]:        401,
+  // 认证中的业务冲突 — 409
+  [ErrEmailRegistered]:   409,
+  [ErrUsernameTaken]:     409,
+  [ErrDeviceLimit]:       400,
+  [ErrSessionNotFound]:   404,
+  // 封禁 — 403
+  [ErrAccountBanned]:     403,
+
+  // 用户
+  [ErrUserNotFound]:      404,
+  [ErrCannotFollowSelf]:  400,
+  [ErrPasswordWrong]:     400,
+
+  // 文章
+  [ErrArticleNotFound]:     404,
+  [ErrArticleNoPerm]:       403,
+  [ErrArticleConflict]:     409,
+  [ErrArticleNotPublished]: 400,
+
+  // 评论
+  [ErrCommentNotFound]:    404,
+  [ErrCommentNoPerm]:      403,
+  [ErrCommentParentWrong]: 400,
+
+  // 标签
+  [ErrTagNotFound]:   404,
+  [ErrTagDuplicate]:  409,
+
+  // 通知
+  [ErrNotificationNotFound]: 404,
+  [ErrNotificationNoPerm]:   403,
+
+  // 上传
+  [ErrFileEmpty]:        400,
+  [ErrFileTypeInvalid]:  400,
+  [ErrFileTooLarge]:     400,
+
+  // 搜索
+  [ErrSearchQueryEmpty]: 400,
+
+  // 管理后台
+  [ErrCannotModifySelf]:    400,
+  [ErrCannotBanSelf]:       400,
+  [ErrLastAdmin]:           400,
+  [ErrRoleNotFound]:        404,
+  [ErrCannotDeleteSysRole]: 403,
+
+  // 系统内部
+  [ErrDatabaseError]:  500,
+  [ErrRedisError]:     500,
+};
+
+/**
+ * 根据错误码获取默认 HTTP 状态码
+ * 未映射的错误码返回 400（客户端错误）
+ */
+export function getHttpStatus(code: number): number {
+  return ERROR_HTTP_STATUS[code] ?? 400;
+}
