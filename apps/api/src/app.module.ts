@@ -22,6 +22,15 @@ import { PermissionModule } from './common/permission/permission.module';
 // 业务功能模块
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
+import { ProfileModule } from './profile/profile.module';
+import { ArticleModule } from './article/article.module';
+import { TagModule } from './tag/tag.module';
+import { CommentModule } from './comment/comment.module';
+import { NotificationModule } from './notification/notification.module';
+import { SearchModule } from './search/search.module';
+import { AdminModule } from './admin/admin.module';
+import { UploadModule } from './upload/upload.module';
+import { QueueModule } from './queue/queue.module';
 // 全链路RequestId生成中间件
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 
@@ -93,17 +102,24 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     AuthModule,
     // 用户基础信息模块
     UserModule,
-
-    // TODO: 以下模块待逐步创建并注册
-    // ProfileModule,    // 用户个人资料
-    // ArticleModule,    // 文章核心业务
-    // TagModule,        // 文章标签
-    // CommentModule,    // 评论
-    // NotificationModule, // 站内消息通知
-    // SearchModule,     // 全文搜索
-    // AdminModule,      // 后台管理
-    // UploadModule,     // 文件上传
-    // QueueModule,      // 异步任务队列
+    // 用户个人资料模块
+    ProfileModule,
+    // 文章核心业务模块
+    ArticleModule,
+    // 文章标签模块
+    TagModule,
+    // 评论模块
+    CommentModule,
+    // 站内消息通知模块
+    NotificationModule,
+    // 全文搜索模块
+    SearchModule,
+    // 后台管理模块
+    AdminModule,
+    // 文件上传模块
+    UploadModule,
+    // 异步任务队列模块
+    QueueModule,
   ],
 })
 export class AppModule implements NestModule {
