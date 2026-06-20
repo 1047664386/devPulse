@@ -7,7 +7,7 @@ import Avatar from '@/components/ui/Avatar';
 import TagBadge from '@/components/ui/TagBadge';
 import Button from '@/components/ui/Button';
 import { Heart, BookMarked, Share2, Eye, Clock } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ArticleDetail, Comment } from '@/types/api';
 
 export default function ArticleDetailPage() {
@@ -97,6 +97,31 @@ export default function ArticleDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['articles'] });
     },
   });
+
+  // ─── 乐观更新列表缓存的阅读次数 ─────────────────────
+  // 详情页每次加载都会从后端拿到实时 viewCount（DB + Redis buffer），
+  // 将其同步到首页列表 / 用户文章列表缓存，避免 staleTime 内数字不一致。
+  useEffect(() => {
+    if (!article) return;
+
+    const updateListCache = (queryKey: string[]) => {
+      queryClient.setQueriesData<{ data: Array<{ id: string; viewCount: number }> }>(
+        { queryKey, exact: false },
+        (old) => {
+          if (!old?.data) return old;
+          return {
+            ...old,
+            data: old.data.map((a) =>
+              a.id === article.id ? { ...a, viewCount: article.viewCount } : a,
+            ),
+          };
+        },
+      );
+    };
+
+    updateListCache(['articles']);
+    updateListCache(['user-articles']);
+  }, [article?.id, article?.viewCount]);
 
   const handleToggleLike = () => {
     if (!article) return;

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
-import type { ArticleListItem } from '@/types/api';
+import { useQueryClient } from '@tanstack/react-query';
+import type { ArticleListItem, ArticleDetail } from '@/types/api';
 import { formatDate, formatNumber, truncate, resolveUploadUrl } from '@/lib/utils';
 import Avatar from '@/components/ui/Avatar';
 import TagBadge from '@/components/ui/TagBadge';
@@ -10,6 +11,41 @@ interface ArticleCardProps {
 }
 
 export default function ArticleCard({ article }: ArticleCardProps) {
+  const queryClient = useQueryClient();
+
+  /**
+   * 点击文章时立即乐观更新查看次数（不等后端响应）
+   *
+   * 1. 列表缓存中该文章 viewCount +1 → 用户返回首页时立即看到新数字
+   * 2. 详情页缓存预设 viewCount +1 → 详情页打开即显示 +1，API 返回后校准
+   *
+   * 业内实践（掘金/知乎）：查看次数属于"低精度高频计数器"，
+   * 前端乐观 +1 + 后端返回真实值校准，用户感知上就是即时的。
+   */
+  const handleViewOptimistic = () => {
+    const newCount = article.viewCount + 1;
+
+    // 乐观更新所有列表缓存
+    const patchList = (old: { data: Array<ArticleListItem & { id: string }> } | undefined) => {
+      if (!old?.data) return old;
+      return {
+        ...old,
+        data: old.data.map((a) =>
+          a.id === article.id ? { ...a, viewCount: newCount } : a,
+        ),
+      };
+    };
+
+    queryClient.setQueriesData({ queryKey: ['articles'], exact: false }, patchList);
+    queryClient.setQueriesData({ queryKey: ['user-articles'], exact: false }, patchList);
+
+    // 预设详情页缓存（API 返回后会被真实值覆盖）
+    queryClient.setQueryData<ArticleDetail>(['article', article.slug], (old) => {
+      if (!old) return old;
+      return { ...old, viewCount: newCount };
+    });
+  };
+
   return (
     <article className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-sm transition-shadow">
       <div className="flex gap-4">
@@ -33,7 +69,7 @@ export default function ArticleCard({ article }: ArticleCardProps) {
           </div>
 
           {/* Title */}
-          <Link to={`/article/${article.slug}`}>
+          <Link to={`/article/${article.slug}`} onClick={handleViewOptimistic}>
             <h2 className="text-lg font-semibold text-gray-900 hover:text-blue-600 transition line-clamp-2">
               {article.title}
             </h2>

@@ -161,7 +161,8 @@ export class ArticleService {
     }
 
     // Buffer view count in Redis (flushed to DB every 60s by ViewCountProcessor)
-    await this.redis.incr(`view_buffer:${article.id}`);
+    // INCR returns the new value — this is the number of views since last flush
+    const bufferCount = await this.redis.incr(`view_buffer:${article.id}`);
 
     let isLiked = false;
     let isBookmarked = false;
@@ -185,7 +186,7 @@ export class ArticleService {
 
     return {
       ...article,
-      viewCount: article.viewCount + 1,
+      viewCount: article.viewCount + bufferCount,
       isLiked,
       isBookmarked,
     };

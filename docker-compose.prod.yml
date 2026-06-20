@@ -94,6 +94,8 @@ services:
         limits:
           cpus: '1.0'
           memory: 512M
+      # 多核服务器取消注释，开多个 API 实例，Nginx 自动负载均衡
+      # replicas: 2
 
   # ─── Frontend (Nginx 静态服务)────────────────────────────
   web:

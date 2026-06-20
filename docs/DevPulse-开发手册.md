@@ -4114,6 +4114,28 @@ function clearAuth() {
 
 **修复方案：** ① `ArticleDetailPage` 的链接改为 `/editor/${article.id}`；② 编辑器同时读取 `useParams` 和 `useSearchParams`，取 `paramId || searchParams.get('id')` 作为 `editId`，兼容两种 URL 格式。`useEffect` 依赖数组增加 `editId` 确保路由参数变化时重新触发回填。
 
+### 15.12 首页列表与文章详情页查看次数不一致
+
+**问题描述：** 列表显示 11 次查看，点进详情页后数字不立即变 12，返回列表也没更新。两个页面都没有实时反映真实的访问量。
+
+**根因分析（三层问题）：**
+
+| 层级 | 问题 | 根因 |
+|------|------|------|
+| 后端 | 多次访问返回相同计数 | `findBySlug` 从 DB 读 `viewCount` 后固定返回 `+1`，未读取 Redis `view_buffer` 中已累积的增量 |
+| 前端-详情页 | 不即时 +1 | 等后端 API 返回才更新 viewCount，用户点击后有明显延迟 |
+| 前端-列表页 | 不更新 | `staleTime: 5min` 缓存策略下，详情页的实时计数不会同步到列表缓存 |
+
+**修复方案：**
+
+1. **后端**（`article.service.ts` → `findBySlug`）：将 `redis.incr()` 的返回值（自上次 flush 以来的累积访问次数）加到 DB `viewCount` 上返回。flush 流程不变——`ViewCountProcessor` 每 60s 将 buffer 写入 DB 并删除 Redis key。
+
+2. **前端-点击即时乐观更新**（`ArticleCard.tsx`）：用户点击文章标题链接时，`onClick` 立即通过 `queryClient.setQueriesData` 将列表缓存和详情页缓存中该文章的 `viewCount + 1`。**不等待后端响应**，用户感知上就是即时的。后端返回真实值后 TanStack Query 自动校准缓存——如果其他用户也在看同一篇文章，真实值可能高于乐观值（如 13 > 12），此时自动覆盖。
+
+3. **前端-详情页校准**（`ArticleDetailPage.tsx`）：`useEffect` 在 API 数据到达后再次同步列表缓存，作为乐观更新的兜底校准层。
+
+**业内实践：** 掘金/知乎将查看次数视为"低精度高频计数器"——前端乐观 +1 + 后端 Redis buffer 批量刷写 DB + 返回真实值校准。不追求每次访问都精确写入 DB（避免大量小 UPDATE），但用户感知上必须是即时的。其他文章的查看次数不轮询，靠 `refetchOnWindowFocus` 自然刷新（切回标签页时自动 refetch）。
+
 ---
 
 ## 十六、项目技术亮点
