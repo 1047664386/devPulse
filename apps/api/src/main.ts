@@ -47,9 +47,11 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
 
   // 开启跨域CORS，允许前端页面跨域请求后端接口
+  // FRONTEND_URL 支持逗号分隔多个域名，如 http://ip,http://domain,https://domain
+  const frontendUrls = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const origins = frontendUrls.split(',').map((url) => url.trim());
   app.enableCors({
-    // 前端地址从环境变量读取，无环境变量则默认本地5173端口(Vite默认端口)
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: origins.length === 1 ? origins[0] : origins,
     // 允许跨域携带Cookie、Token凭证
     credentials: true,
     maxAge: 86400, // 预检缓存24小时，大幅减少OPTIONS请求
