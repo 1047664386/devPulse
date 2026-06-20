@@ -23,8 +23,8 @@ COPY apps/api/tsconfig.build.json apps/api/tsconfig.build.json
 COPY apps/api/nest-cli.json apps/api/nest-cli.json
 COPY apps/api/src apps/api/src/
 
-# Generate Prisma Client & build (use tsc directly, nest build may fail in monorepo)
-RUN cd apps/api && npx prisma generate && npx tsc -p tsconfig.build.json
+# Generate Prisma Client & build
+RUN cd apps/api && npx prisma generate && ./node_modules/.bin/nest build
 
 # ─── Stage 2: Production ─────────────────────────────────
 FROM node:22-alpine AS runner
