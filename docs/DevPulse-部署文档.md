@@ -1,8 +1,8 @@
 # DevPulse — 生产环境部署指南
 
 **部署方案：** 单台 VPS + Docker Compose + Nginx 反向代理  
-**适用环境：** 阿里云 / 腾讯云 / AWS / DigitalOcean 等 2C4G 以上 VPS  
-**最后更新：** 2026-06-20
+**适用环境：** 阿里云 / 腾讯云 / 百度云 / AWS / DigitalOcean 等 2C4G 以上 VPS  
+**最后更新：** 2026-06-21
 
 ---
 
@@ -16,6 +16,7 @@
 - [六、运维与监控](#六运维与监控)
 - [七、更新与回滚](#七更新与回滚)
 - [八、常见问题排查](#八常见问题排查)
+- [九、国内服务器踩坑记录](#九国内服务器踩坑记录)
 
 ---
 
@@ -65,6 +66,7 @@ DevPulse/
 ├── apps/
 │   ├── api/
 │   │   ├── Dockerfile            # 后端多阶段构建
+│   │   ├── prisma.config.js      # 生产环境 Prisma 配置（纯 JS，无需 ts-node）
 │   │   └── .dockerignore
 │   └── web/
 │       ├── Dockerfile            # 前端多阶段构建
@@ -82,23 +84,73 @@ DevPulse/
 
 ### 2.2 安装 Docker + Docker Compose
 
+**海外服务器：**
+
 ```bash
-# 更新系统
+sudo apt update && sudo apt upgrade -y
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+**国内服务器（百度云/阿里云/腾讯云等，Docker 官方脚本被墙）：**
+
+```bash
 sudo apt update && sudo apt upgrade -y
 
-# 安装 Docker（官方脚本）
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER   # 免 sudo 运行 docker
+# 安装依赖
+sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
+
+# 添加阿里云 Docker 镜像源
+curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# 安装 Docker
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 # 验证
 docker --version        # 24.x+
 docker compose version  # 2.x+
 
-# 重新登录使 docker 组生效
+# 免 sudo 运行 docker
+sudo usermod -aG docker $USER
 newgrp docker
 ```
 
-### 2.3 安装 Git 并拉取代码
+### 2.3 配置 Docker 国内镜像加速器（国内服务器必做）
+
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me",
+    "https://docker.rainbond.cc"
+  ],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "50m",
+    "max-file": "3"
+  }
+}
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+### 2.4 修复 DNS（国内服务器可能需要）
+
+```bash
+# 如果镜像源域名无法解析，添加公共 DNS
+echo "nameserver 223.5.5.5" | sudo tee /etc/resolv.conf
+echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf
+```
+
+### 2.5 安装 Git 并拉取代码
 
 ```bash
 sudo apt install -y git
@@ -106,7 +158,7 @@ git clone https://github.com/your-org/DevPulse.git
 cd DevPulse
 ```
 
-### 2.4 配置防火墙
+### 2.6 配置防火墙
 
 ```bash
 # UFW 防火墙（Ubuntu 默认）
@@ -119,15 +171,19 @@ sudo ufw enable
 sudo ufw status
 ```
 
-### 2.5 创建生产环境变量
+**重要：** 云服务商（百度云/阿里云/腾讯云）除了系统防火墙，还有**安全组**规则。必须在控制台放行 22、80、443 端口入站规则，否则外网访问不了。
+
+### 2.7 创建生产环境变量
 
 ```bash
-# 从模板创建
+# 从模板创建（注意：用 .env.prod.example，不是 .env.example）
 cp .env.prod.example .env
 
-# 生成随机密钥
-openssl rand -base64 48    # → 复制结果填入 JWT_SECRET
-openssl rand -base64 48    # → 复制结果填入 JWT_REFRESH_SECRET（必须与上面不同）
+# 生成随机密钥（执行 4 次，分别填入以下 4 个变量）
+openssl rand -base64 48    # → POSTGRES_PASSWORD
+openssl rand -base64 48    # → REDIS_PASSWORD
+openssl rand -base64 48    # → JWT_SECRET
+openssl rand -base64 48    # → JWT_REFRESH_SECRET（必须与 JWT_SECRET 不同）
 ```
 
 编辑 `.env` 文件，**必须修改以下所有 `<CHANGE_ME>` 项**：
@@ -140,14 +196,14 @@ vi .env   # 或 nano .env
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `POSTGRES_PASSWORD` | 数据库密码，至少 16 位随机字符串 | `xK9#mP2$vL8nQ4wR` |
-| `REDIS_PASSWORD` | Redis 密码 | `rT5&jH7@bN3cF1dZ` |
+| `POSTGRES_PASSWORD` | 数据库密码 | `openssl rand -base64 48` 的输出 |
+| `REDIS_PASSWORD` | Redis 密码 | `openssl rand -base64 48` 的输出 |
 | `JWT_SECRET` | AccessToken 签名密钥 | `openssl rand -base64 48` 的输出 |
-| `JWT_REFRESH_SECRET` | RefreshToken 签名密钥（必须不同于 JWT_SECRET） | 另一个 `openssl rand` 的输出 |
-| `ADMIN_PASSWORD` | 超级管理员初始密码 | `SecureP@ss2026!` |
-| `FRONTEND_URL` | 前端域名（CORS + 重置邮件链接） | `https://devpulse.com` |
+| `JWT_REFRESH_SECRET` | RefreshToken 签名密钥（必须不同于 JWT_SECRET） | `openssl rand -base64 48` 的输出 |
+| `ADMIN_PASSWORD` | 超级管理员初始密码 | 自己设的强密码，如 `SecureP@ss2026!` |
+| `FRONTEND_URL` | 前端域名（CORS + 重置邮件链接） | `https://devpulse.com`，备案前用 `http://你的IP` |
 | `APP_URL` | 同源部署留空；分域部署填后端域名 | 留空或 `https://api.devpulse.com` |
-| `SMTP_*` | 邮件服务配置（阿里云/腾讯企业邮） | 按服务商文档填写 |
+| `SMTP_*` | 邮件服务配置（阿里云/腾讯企业邮） | 按服务商文档填写，暂不用可留空 |
 
 ---
 
@@ -156,9 +212,11 @@ vi .env   # 或 nano .env
 ### 3.1 一键启动
 
 ```bash
-# 构建所有镜像并启动（首次约 3-5 分钟）
+# 构建所有镜像并启动（首次约 5-10 分钟，国内服务器可能更久）
 docker compose -f docker-compose.prod.yml up -d --build
 ```
+
+> **说明：** Dockerfile 已内置国内镜像源配置（npm/pnpm/Prisma 引擎），国内服务器无需额外配置。
 
 ### 3.2 验证服务状态
 
@@ -209,16 +267,17 @@ curl -I http://localhost/uploads/test.webp
 
 ### 4.1 执行数据库迁移
 
+API 容器启动时会自动执行 `prisma migrate deploy`（已内置在 CMD 中）。如果自动迁移失败，可手动执行：
+
 ```bash
-# 应用所有 Prisma 迁移（创建表结构）
-docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml exec api sh -c "npx prisma migrate deploy"
 ```
 
 ### 4.2 初始化种子数据（可选）
 
 ```bash
 # 创建系统角色、权限、测试用户、示例文章
-docker compose -f docker-compose.prod.yml exec api npx tsx prisma/seed.ts
+docker compose -f docker-compose.prod.yml exec api sh -c "npx --yes tsx prisma/seed.ts"
 ```
 
 种子数据包含：
@@ -258,7 +317,15 @@ curl -X POST http://localhost/api/v1/auth/login \
 | A | www | 你的服务器 IP |
 | A | api（分域部署时） | 你的服务器 IP |
 
-### 5.2 Let's Encrypt 证书
+### 5.2 修改 Nginx 配置
+
+备案通过后，将 `docker/nginx/nginx.conf` 中的 `server_name _` 改为你的域名：
+
+```nginx
+server_name your-domain.com;
+```
+
+### 5.3 Let's Encrypt 证书
 
 ```bash
 # 安装 certbot
@@ -274,7 +341,7 @@ sudo certbot certonly --standalone -d your-domain.com -d www.your-domain.com
 ls /etc/letsencrypt/live/your-domain.com/
 ```
 
-### 5.3 启用 HTTPS
+### 5.4 启用 HTTPS
 
 1. 编辑 `docker/nginx/nginx.conf`：取消注释 HTTPS server 块，注释掉 HTTP 的 `return 301` 改为实际配置
 
@@ -288,7 +355,7 @@ ls /etc/letsencrypt/live/your-domain.com/
 docker compose -f docker-compose.prod.yml up -d --build nginx
 ```
 
-### 5.4 证书自动续期
+### 5.5 证书自动续期
 
 ```bash
 # 添加 cron 定时任务（每月 1 号凌晨 3 点续期）
@@ -369,6 +436,10 @@ echo "[$DATE] Backup completed"
 # Docker 默认日志会持续增长，配置日志轮转
 # 编辑 /etc/docker/daemon.json：
 {
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me"
+  ],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "50m",
@@ -405,15 +476,14 @@ docker image prune -f
 cd DevPulse
 git pull origin main
 
-# 2. 重新构建并启动（只重建有变化的容器）
+# 2. 重新构建并启动（只重建有变化的容器，有缓存很快）
 docker compose -f docker-compose.prod.yml up -d --build
 
-# 3. 执行新迁移（如有）
-docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
-
-# 4. 清理旧镜像
+# 3. 清理旧镜像
 docker image prune -f
 ```
+
+> **说明：** API 容器启动时会自动执行 `prisma migrate deploy`，无需手动迁移。
 
 ### 7.2 回滚
 
@@ -425,7 +495,7 @@ git checkout v1.0.0   # 或 git log 找到稳定 commit
 docker compose -f docker-compose.prod.yml up -d --build
 
 # 3. 如果有数据库回滚需要（慎用，会丢数据）
-docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml exec api sh -c "npx prisma migrate deploy"
 ```
 
 ### 7.3 零停机更新（进阶）
@@ -518,14 +588,213 @@ docker system prune -af --volumes   # 危险！会删除所有未使用的镜像
 docker image prune -f               # 安全：只清理悬空镜像
 ```
 
+### Q7：ICP 备案期间如何访问
+
+**方法一：直接用 IP 访问（推荐）**
+
+1. `.env` 中 `FRONTEND_URL` 设为 `http://你的服务器IP`
+2. `docker/nginx/nginx.conf` 中 `server_name` 保持 `_`（默认已配置）
+3. 百度云安全组放行 80 端口
+4. 浏览器访问 `http://你的服务器IP`
+
+**方法二：SSH 隧道（更安全，不暴露端口）**
+
+```bash
+# 在本地电脑执行
+ssh -L 8080:localhost:80 root@你的服务器IP
+# 浏览器访问 http://localhost:8080
+```
+
+备案通过后再改域名 + 配置 HTTPS。
+
+---
+
+## 九、国内服务器踩坑记录
+
+> 以下为在百度云 BCC（Ubuntu）上实际部署时遇到的所有问题及解决方案，供参考。
+
+### 坑 1：Docker 官方安装脚本被墙
+
+**现象：** `curl -fsSL https://get.docker.com | sh` 报 `Connection reset by peer`
+
+**原因：** 国内无法访问 `get.docker.com`
+
+**解决：** 使用阿里云 Docker 镜像源安装，见 [2.2 节](#22-安装-docker--docker-compose)
+
+### 坑 2：Docker Hub 拉取镜像超时
+
+**现象：** `docker compose up -d --build` 报 `i/o timeout`，无法拉取 `nginx:1.27-alpine` 等基础镜像
+
+**原因：** `registry-1.docker.io` 被墙
+
+**解决：** 配置 Docker 镜像加速器，见 [2.3 节](#23-配置-docker-国内镜像加速器国内服务器必做)
+
+### 坑 3：百度云自带镜像源失效
+
+**现象：** `mirror.baidubce.com` 报 `no such host`
+
+**原因：** 百度云自带的 Docker 镜像源已下线
+
+**解决：** 使用第三方可用镜像源（`docker.1ms.run` 等）
+
+### 坑 4：DNS 解析失败
+
+**现象：** 镜像源域名无法解析
+
+**原因：** 百度云默认 DNS 不稳定
+
+**解决：** 修改 `/etc/resolv.conf` 添加 `223.5.5.5`（阿里 DNS）和 `8.8.8.8`
+
+### 坑 5：npm/pnpm 安装依赖超时
+
+**现象：** Docker 构建时 `pnpm install` 报 `The operation was aborted due to timeout`
+
+**原因：** 默认从 `registry.npmjs.org` 下载，国内很慢
+
+**解决：** Dockerfile 中已配置 `pnpm config set registry https://registry.npmmirror.com`，并增加超时和重试：
+
+```dockerfile
+RUN pnpm config set fetch-timeout 600000 \
+    && pnpm config set fetch-retries 5 \
+    && pnpm config set fetch-retry-mintimeout 30000 \
+    && pnpm config set fetch-retry-maxtimeout 120000
+```
+
+### 坑 6：Prisma 引擎下载卡住
+
+**现象：** `pnpm install` 时卡在 `@prisma/get-platform` 或 `@prisma/config` 下载
+
+**原因：** Prisma 引擎二进制文件从 GitHub Releases 下载，国内被墙
+
+**解决：** Dockerfile 中设置环境变量：
+
+```dockerfile
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
+```
+
+### 坑 7：corepack 访问 npmjs.org 失败
+
+**现象：** `corepack prepare pnpm@latest --activate` 报 `Error when performing the request to https://registry.npmjs.org/pnpm`
+
+**原因：** corepack 不走 pnpm registry 配置，直接访问 npmjs.org
+
+**解决：** 改用 `npm install -g pnpm@latest`，并在之前先设置 npm 镜像：
+
+```dockerfile
+RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm@latest
+```
+
+### 坑 8：Prisma 7.x 的 prisma.config.ts 在生产容器无法运行
+
+**现象：** `prisma migrate deploy` 报 `The datasource.url property is required`
+
+**原因：** Prisma 7.x 从 `prisma.config.ts` 读取配置，但生产容器没有 `ts-node` 来执行 TypeScript
+
+**解决：** 创建纯 JS 版本 `prisma.config.js`，不依赖 ts-node 和 dotenv：
+
+```javascript
+// prisma.config.js（生产环境专用）
+const { defineConfig } = require("prisma/config");
+module.exports = defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: { path: "prisma/migrations" },
+  datasource: { url: process.env.DATABASE_URL },
+});
+```
+
+同时将 `dotenv` 和 `prisma` 从 devDependencies 移到 dependencies，确保 `--prod` 安装也包含。
+
+### 坑 9：nest build 输出路径是 dist/src/main.js
+
+**现象：** `Cannot find module '/app/apps/api/dist/main'`
+
+**原因：** NestJS 的 `nest build` 输出保持源码目录结构，`main.ts` 编译后在 `dist/src/main.js`
+
+**解决：** CMD 中使用正确路径：
+
+```dockerfile
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main"]
+```
+
+### 坑 10：seed.ts 引用 src 目录源码
+
+**现象：** `npx tsx prisma/seed.ts` 报 `Cannot find module '../src/common/constants/permissions'`
+
+**原因：** seed.ts 引用了 `src/` 下的源码文件，但生产镜像只复制了 `dist/`
+
+**解决：** Dockerfile 中额外复制 `src/` 和 `tsconfig.json` 到生产镜像：
+
+```dockerfile
+COPY --from=builder /app/apps/api/src apps/api/src/
+COPY --from=builder /app/apps/api/tsconfig.json apps/api/tsconfig.json
+```
+
+### 坑 11：nginx.conf 的 server_name 不支持 IP 访问
+
+**现象：** 浏览器用 IP 访问返回 444 或无响应
+
+**原因：** `server_name your-domain.com` 只匹配域名，不匹配 IP
+
+**解决：** 备案前用 `server_name _;`（通配），备案后改为真实域名
+
+### 坑 12：百度云安全组未放行端口
+
+**现象：** 服务器上 `curl localhost` 正常，但浏览器访问不了
+
+**原因：** 百度云 BCC 有安全组规则，默认只放行 22 端口
+
+**解决：** 在百度云控制台 → BCC 实例 → 安全组中，放行 80、443 端口入站规则
+
+### 坑 13：Redis eviction policy 警告
+
+**现象：** 日志持续输出 `IMPORTANT! Eviction policy is allkeys-lru. It should be "noeviction"`
+
+**原因：** Redis 默认淘汰策略是 `allkeys-lru`，但 BullMQ 队列要求 `noeviction`
+
+**解决：** `docker-compose.prod.yml` 中 Redis 启动命令已配置 `--maxmemory-policy noeviction`
+
+### 坑 14：FRONTEND_URL 配置错误导致 CORS 拦截
+
+**现象：** 页面加载出来但内容空白，浏览器 F12 Console 报 CORS 错误（`Access-Control-Allow-Origin` 不匹配）
+
+**原因：** `.env` 中 `FRONTEND_URL` 配置了域名（如 `https://zxr94.cloud`），但实际用 IP 访问（`http://120.48.139.179`），后端 CORS 只允许配置的域名
+
+**解决：** 备案前将 `FRONTEND_URL` 改为当前实际访问地址：
+
+```bash
+# 编辑 .env
+FRONTEND_URL=http://120.48.139.179
+
+# 重启 API 生效
+docker compose -f docker-compose.prod.yml restart api
+```
+
+备案通过后改回域名：`FRONTEND_URL=https://your-domain.com`
+
+### 坑 15：百度云未备案服务器封禁 80/443 端口
+
+**现象：** 安全组已放行 80 端口，服务器内 curl 正常，但外网浏览器无法访问
+
+**原因：** 部分国内云服务商对未 ICP 备案的服务器自动封禁 80/443 端口
+
+**解决：** 改用非标准端口（如 8080），修改 `docker-compose.prod.yml`：
+
+```yaml
+nginx:
+  ports:
+    - "8080:80"   # 临时用 8080
+```
+
+备案通过后改回 `"80:80"`
+
 ---
 
 ## 附录 A：生产环境变量速查
 
 | 变量 | 必填 | 说明 | 示例值 |
 |------|------|------|--------|
-| `POSTGRES_PASSWORD` | 是 | 数据库密码 | 随机 16 位+ |
-| `REDIS_PASSWORD` | 是 | Redis 密码 | 随机 16 位+ |
+| `POSTGRES_PASSWORD` | 是 | 数据库密码 | `openssl rand -base64 48` |
+| `REDIS_PASSWORD` | 是 | Redis 密码 | `openssl rand -base64 48` |
 | `JWT_SECRET` | 是 | AccessToken 密钥 | `openssl rand -base64 48` |
 | `JWT_REFRESH_SECRET` | 是 | RefreshToken 密钥 | `openssl rand -base64 48` |
 | `ADMIN_PASSWORD` | 是 | 管理员初始密码 | 强密码 |
@@ -554,6 +823,7 @@ docker image prune -f               # 安全：只清理悬空镜像
 - [ ] `.env` 文件已加入 `.gitignore`，不会提交到版本库
 - [ ] 种子数据中的测试密码已修改
 - [ ] 防火墙仅开放 22/80/443 端口，数据库和 Redis 不暴露到宿主机
+- [ ] 云服务商安全组已放行 22/80/443 端口
 - [ ] SMTP 使用 465 或 587 端口（非 25）
 - [ ] HTTPS 已配置，HTTP 自动跳转 HTTPS
 - [ ] Nginx `nginx.conf` 中 `server_name` 已改为真实域名
