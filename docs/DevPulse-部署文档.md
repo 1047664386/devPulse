@@ -16,6 +16,7 @@
 - [六、运维与监控](#六运维与监控)
 - [七、更新与回滚](#七更新与回滚)
 - [八、常见问题排查](#八常见问题排查)
+- [九、踩坑实录（百度云 BCC 部署实战）](#九踩坑实录百度云-bcc-部署实战)
 
 ---
 
@@ -517,6 +518,209 @@ docker system df
 docker system prune -af --volumes   # 危险！会删除所有未使用的镜像和卷
 docker image prune -f               # 安全：只清理悬空镜像
 ```
+
+---
+
+## 九、踩坑实录（百度云 BCC 部署实战）
+
+> 以下为 2026-06 在百度云 BCC（Ubuntu 24.04, 2C2G, 1Mbps）部署时遇到的所有问题及解决方案，供参考。
+
+### 坑 1：Docker 安装脚本被墙
+
+**现象：** `curl -fsSL https://get.docker.com | sh` 报 `Connection reset by peer`
+
+**解决：** 使用国内镜像源安装
+```bash
+curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt update && sudo apt install -y docker-ce docker-compose-plugin
+```
+
+### 坑 2：Docker Hub 镜像拉取超时
+
+**现象：** `dial tcp 96.44.137.28:443: i/o timeout`，postgres/redis/nginx 基础镜像拉不下来
+
+**解决：** 配置 Docker 国内镜像源
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": ["https://docker.1ms.run"],
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "50m", "max-file": "3" }
+}
+EOF
+sudo systemctl restart docker
+```
+
+### 坑 3：pnpm install 超时 / Prisma engine 下载失败
+
+**现象：** 构建镜像时 `pnpm install` 卡住或报 `TimeoutError`，Prisma engine 下载失败
+
+**解决：** Dockerfile 中配置国内镜像 + 超时参数
+```dockerfile
+# npm/pnpm 国内镜像
+RUN pnpm config set registry https://registry.npmmirror.com
+RUN pnpm config set fetch-timeout 600000
+RUN pnpm config set fetch-retry-factor 10
+RUN pnpm config set fetch-retries 5
+
+# Prisma engine 国内镜像
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
+```
+
+### 坑 4：`Cannot find module '/app/apps/api/dist/main'`
+
+**现象：** API 容器启动报 `MODULE_NOT_FOUND`
+
+**原因：** Dockerfile 中用 `pnpm build --filter api` 构建，但项目根 `package.json` 的 build 脚本是 `build:api`，不是按 workspace filter 方式定义的，导致 `dist` 目录没生成
+
+**解决：** Dockerfile 中改用 `pnpm build:api`，并确保 `COPY --from=builder` 路径正确
+```dockerfile
+# 构建阶段
+RUN pnpm build:api
+
+# 运行阶段
+COPY --from=builder /app/apps/api/dist apps/api/dist/
+```
+
+### 坑 5：`The table 'public.roles' does not exist`
+
+**现象：** API 启动后报数据库表不存在
+
+**原因：** 数据库迁移未执行
+
+**解决：** 在 API 容器启动命令中自动执行迁移
+```dockerfile
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main"]
+```
+
+### 坑 6：`sh: ./node_modules/.bin/prisma: not found`
+
+**现象：** 容器内执行 `prisma migrate deploy` 报找不到命令
+
+**原因：** `prisma` 在 `devDependencies` 中，生产镜像 `pnpm install --prod` 不安装 dev 依赖
+
+**解决：** 将 `prisma` 从 `devDependencies` 移到 `dependencies`
+
+### 坑 7：`Cannot find module 'dotenv/config'` in prisma.config.js
+
+**现象：** 生产环境 `prisma.config.js` 中 `require("dotenv/config")` 报错
+
+**原因：** 生产环境由 Docker 注入环境变量，不需要 dotenv；且 dotenv 可能在 prod 依赖中不存在
+
+**解决：** `prisma.config.js` 去掉 `require("dotenv/config")`，直接用 `process.env`
+```javascript
+const { defineConfig } = require("prisma/config");
+module.exports = defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: { path: "prisma/migrations" },
+  datasource: { url: process.env.DATABASE_URL },
+});
+```
+
+### 坑 8：`Cannot find module '../src/common/constants/permissions'` in seed.ts
+
+**现象：** 执行 `npx tsx prisma/seed.ts` 报模块找不到
+
+**原因：** `seed.ts` 引用了 `../src/common/constants/permissions`，但生产镜像只复制了 `dist`，没有 `src`
+
+**解决：** Dockerfile 中额外复制 `src` 目录
+```dockerfile
+COPY --from=builder /app/apps/api/src apps/api/src/
+```
+
+### 坑 9：Nginx `server_name` 导致 IP 访问被拒
+
+**现象：** 用 IP 访问返回 444 或无响应
+
+**原因：** `nginx.conf` 中 `server_name` 写了具体域名，IP 访问不匹配
+
+**解决：** 改为 `server_name _;`，匹配所有请求
+```nginx
+server {
+    listen 80;
+    server_name _;
+    ...
+}
+```
+
+### 坑 10：百度云安全组未放行 80/443 端口
+
+**现象：** 服务器本地 `curl localhost` 正常，外网无法访问
+
+**原因：** 百度云安全组默认只开 22 和 3389，80/443 未放行
+
+**解决：** 百度云控制台 → BCC 实例 → 安全组 → 添加入站规则：TCP 80/443，源 0.0.0.0/0
+
+### 坑 11：未备案域名被百度云拦截
+
+**现象：** 域名访问显示「该网站暂时无法访问，根据工信部相关法律法规已阻断」
+
+**原因：** 国内云服务器要求域名必须完成 ICP 备案，未备案域名会被自动拦截
+
+**解决：** 备案完成前用 IP 访问（`http://服务器IP`），备案通过后再用域名
+
+### 坑 12：CORS `Access-Control-Allow-Origin` 逗号分隔导致浏览器拒绝
+
+**现象：** 登录接口返回 200，但前端拿不到响应数据，sessionStorage 无 token，页面卡死
+
+**原因：** `.env` 中 `FRONTEND_URL=http://ip,http://domain,https://domain`，NestJS `app.enableCors({ origin })` 直接传入逗号分隔字符串，但 CORS 规范要求 `Access-Control-Allow-Origin` 只能返回单个值，浏览器看到多个值直接拒绝整个响应
+
+**排查过程：**
+1. 浏览器 F12 → Network → login 请求状态码 200 但 Response 为空
+2. 服务器 `curl -v` 测试登录接口，响应头 `Access-Control-Allow-Origin: http://ip,http://domain,https://domain` — 逗号分隔
+3. 确认 CORS 规范不允许逗号分隔
+
+**解决：** 后端 `main.ts` 中将逗号分隔字符串解析为数组
+```typescript
+const frontendUrls = process.env.FRONTEND_URL || 'http://localhost:5173';
+const origins = frontendUrls.split(',').map((url) => url.trim());
+app.enableCors({
+  origin: origins.length === 1 ? origins[0] : origins,
+  credentials: true,
+});
+```
+
+### 坑 13：Cookie `secure: true` 在 HTTP 下不生效
+
+**现象：** 登录后关闭浏览器再打开，登录态丢失；Cookie 中无 `refresh_token`
+
+**原因：** 后端 Cookie 配置 `secure: process.env.NODE_ENV === 'production'`，生产环境下 `secure: true`，浏览器在 HTTP 协议下直接忽略该 Cookie
+
+**排查过程：**
+1. 浏览器 F12 → Application → Cookies → 无 `refresh_token`
+2. 服务器 `curl -v` 测试登录 → 响应头有 `Set-Cookie: refresh_token=...; HttpOnly; SameSite=None`，但缺少 `Secure` 标记
+3. 实际是 `Secure` 标记导致 HTTP 下浏览器拒绝存储
+
+**解决：** Cookie 的 `secure` 和 `sameSite` 根据是否启用 HTTPS 动态配置
+```typescript
+const RT_COOKIE_OPTIONS: CookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS === 'true',
+  sameSite: process.env.FORCE_HTTPS === 'true' ? 'lax' : 'none',
+  path: '/api/v1/auth',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+```
+
+备案通过配好 HTTPS 后，在 `.env` 中添加 `FORCE_HTTPS=true` 即可切换为安全模式。
+
+### 坑 14：1Mbps 带宽导致页面卡死
+
+**现象：** 登录后多个 API 请求 pending，页面卡死，Console 疯狂报错
+
+**原因：** 1Mbps = 128KB/s，前端 JS 文件约 980KB 需 8 秒加载，多个请求并发时带宽耗尽
+
+**解决：** 升级带宽到 3-5Mbps（推荐 5Mbps）
+
+### 坑 15：前端 TypeScript 编译错误导致构建失败
+
+**现象：** `docker compose build` 时 web 构建报 TS 类型错误
+
+**原因：** 本地开发时 `tsc` 未严格检查，生产构建 `tsc -b` 会报错
+
+**解决：** 修复类型错误后再构建，或本地先执行 `pnpm build:web` 验证
 
 ---
 
