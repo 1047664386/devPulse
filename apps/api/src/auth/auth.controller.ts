@@ -51,8 +51,8 @@ const RT_COOKIE_NAME = 'refresh_token';
  */
 const RT_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS === 'true',
+  sameSite: process.env.FORCE_HTTPS === 'true' ? 'lax' : 'none',
   path: '/api/v1/auth',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
@@ -63,8 +63,8 @@ const RT_COOKIE_OPTIONS: CookieOptions = {
  */
 const CLEAR_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production' && process.env.FORCE_HTTPS === 'true',
+  sameSite: process.env.FORCE_HTTPS === 'true' ? 'lax' : 'none',
   path: '/api/v1/auth',
 };
 
