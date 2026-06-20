@@ -1,7 +1,7 @@
 # ─── Stage 1: Build ──────────────────────────────────────
 FROM node:22-alpine AS builder
 
-RUN npm install -g pnpm@latest
+RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm@latest
 RUN pnpm config set registry https://registry.npmmirror.com \
     && pnpm config set fetch-timeout 600000 \
     && pnpm config set fetch-retries 5 \
@@ -27,7 +27,7 @@ RUN cd apps/api && npx prisma generate && pnpm exec nest build && ls -la dist/
 # ─── Stage 2: Production ─────────────────────────────────
 FROM node:22-alpine AS runner
 
-RUN npm install -g pnpm@latest \
+RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm@latest \
     && apk add --no-cache curl
 RUN pnpm config set registry https://registry.npmmirror.com \
     && pnpm config set fetch-timeout 600000 \
