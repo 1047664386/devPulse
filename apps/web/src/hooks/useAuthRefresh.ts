@@ -23,14 +23,16 @@ export function useAuthRefresh() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setUser = useAuthStore((s) => s.setUser);
 
-  useQuery({
+  const { data } = useQuery({
     queryKey: ['auth-me'],
     queryFn: authApi.getMe,
     enabled: isAuthenticated, // 仅在有 token 时发起
     staleTime: 1000 * 60 * 5, // 5 分钟内不重复请求（避免 SPA 内路由切换重复触发）
     retry: false,              // 401 由 axios 拦截器处理 token 刷新，Query 不自行重试
-    onSuccess: (freshUser) => {
-      setUser(freshUser); // 服务端返回最新 user → 覆盖本地缓存
-    },
   });
+
+  // 服务端返回最新 user → 覆盖本地缓存
+  if (data) {
+    setUser(data);
+  }
 }
