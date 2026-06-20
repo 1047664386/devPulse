@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation, Navigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
+import { useAuthRefresh } from '@/hooks/useAuthRefresh';
 import { hasRole } from '@/types/api';
 import { BarChart3, FileText, Tags, Users, Shield, ShieldPlus } from 'lucide-react';
 
@@ -16,6 +17,9 @@ const navItems = [
 export default function AdminLayout() {
   const location = useLocation();
   const { user, isAuthenticated } = useAuthStore();
+
+  // 认证状态后台刷新：与 MainLayout 共用同一套 SWR 逻辑
+  useAuthRefresh();
 
   // Redirect non-authenticated or non-admin users
   if (!isAuthenticated || !user) {

@@ -4,8 +4,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Input from '@/components/ui/Input';
+import PasswordInput from '@/components/ui/PasswordInput';
 import Button from '@/components/ui/Button';
 import api, { getApiError } from '@/lib/api';
+import { getDeviceFingerprint } from '@/lib/fingerprint';
 import { useAuthStore } from '@/stores/authStore';
 import type { AuthResponse } from '@/types/api';
 
@@ -41,7 +43,11 @@ export default function RegisterPage() {
     setError('');
     try {
       const { confirmPassword: _, ...payload } = data;
-      const res = await api.post<{ data: AuthResponse }>('/auth/register', payload);
+      const fingerprint = getDeviceFingerprint();
+      const res = await api.post<{ data: AuthResponse }>('/auth/register', {
+        ...payload,
+        fingerprint,
+      });
       const { user, accessToken, refreshToken } = res.data.data;
       login(user, accessToken, refreshToken);
       navigate('/');
@@ -67,8 +73,8 @@ export default function RegisterPage() {
         <Input label="邮箱" type="email" placeholder="you@example.com" error={errors.email?.message} {...register('email')} />
         <Input label="用户名" placeholder="cooldev" error={errors.username?.message} {...register('username')} />
         <Input label="昵称" placeholder="Cool Developer" error={errors.displayName?.message} {...register('displayName')} />
-        <Input label="密码" type="password" placeholder="至少 8 位，含大小写和数字" error={errors.password?.message} {...register('password')} />
-        <Input label="确认密码" type="password" placeholder="再次输入密码" error={errors.confirmPassword?.message} {...register('confirmPassword')} />
+        <PasswordInput label="密码" placeholder="至少 8 位，含大小写和数字" error={errors.password?.message} {...register('password')} />
+        <PasswordInput label="确认密码" placeholder="再次输入密码" error={errors.confirmPassword?.message} {...register('confirmPassword')} />
         <Button type="submit" className="w-full" loading={loading}>
           注册
         </Button>

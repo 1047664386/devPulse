@@ -110,7 +110,7 @@ UPLOAD_DIR=./uploads
 MAX_FILE_SIZE=2097152
 
 # Email (optional, dev only)
-SMTP_HOST=localhost
+SMTP_HOST=127.0.0.1
 SMTP_PORT=1025
 精准改动对照清单
 容器名称

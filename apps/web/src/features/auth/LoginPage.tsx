@@ -4,8 +4,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Input from '@/components/ui/Input';
+import PasswordInput from '@/components/ui/PasswordInput';
 import Button from '@/components/ui/Button';
 import api, { getApiError } from '@/lib/api';
+import { getDeviceFingerprint } from '@/lib/fingerprint';
 import { useAuthStore } from '@/stores/authStore';
 import type { AuthResponse } from '@/types/api';
 
@@ -32,7 +34,11 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await api.post<{ data: AuthResponse }>('/auth/login', data);
+      const fingerprint = getDeviceFingerprint();
+      const res = await api.post<{ data: AuthResponse }>('/auth/login', {
+        ...data,
+        fingerprint,
+      });
       const { user, accessToken, refreshToken } = res.data.data;
       login(user, accessToken, refreshToken);
       navigate('/');
@@ -56,7 +62,12 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input label="邮箱" type="email" placeholder="you@example.com" error={errors.email?.message} {...register('email')} />
-        <Input label="密码" type="password" placeholder="输入密码" error={errors.password?.message} {...register('password')} />
+        <PasswordInput label="密码" placeholder="输入密码" error={errors.password?.message} {...register('password')} />
+        <div className="flex justify-end">
+          <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-700">
+            忘记密码？
+          </Link>
+        </div>
         <Button type="submit" className="w-full" loading={loading}>
           登录
         </Button>

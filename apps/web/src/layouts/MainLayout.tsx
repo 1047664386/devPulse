@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
-import { hasRole } from '@/types/api';
+import { useAuthRefresh } from '@/hooks/useAuthRefresh';
+import { hasRole, canCreateArticle } from '@/types/api';
 import { notificationApi, authApi } from '@/lib/api-services';
-import { cn } from '@/lib/utils';
+import { cn, resolveUploadUrl } from '@/lib/utils';
 import {
   Bell,
   BookMarked,
@@ -41,6 +42,9 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  // 认证状态后台刷新：本地缓存先渲染 UI，后台静默拉取最新用户数据
+  useAuthRefresh();
 
   const { data: unreadData } = useQuery({
     queryKey: ['unread-count'],
@@ -95,13 +99,15 @@ export default function MainLayout() {
           <div className="flex items-center gap-2">
             {isAuthenticated && user ? (
               <>
-                <Link
-                  to="/editor"
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition"
-                >
-                  <Feather className="w-4 h-4" />
-                  写文章
-                </Link>
+                {canCreateArticle(user) && (
+                  <Link
+                    to="/editor"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition"
+                  >
+                    <Feather className="w-4 h-4" />
+                    写文章
+                  </Link>
+                )}
                 <Link to="/notifications" className="relative p-2 text-gray-500 hover:text-gray-700 transition">
                   <Bell className="w-5 h-5" />
                   {unreadCount > 0 && (
@@ -115,7 +121,7 @@ export default function MainLayout() {
                     className="flex items-center gap-2 p-1 rounded-full hover:bg-gray-100 transition"
                   >
                     {user.avatar ? (
-                      <img src={user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                      <img src={resolveUploadUrl(user.avatar)} alt="" className="w-8 h-8 rounded-full object-cover" />
                     ) : (
                       <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
                         <UserIcon className="w-4 h-4 text-blue-600" />
@@ -205,7 +211,7 @@ export default function MainLayout() {
             <NavLink to="/">首页</NavLink>
             <NavLink to="/tags">标签</NavLink>
             <NavLink to="/search">搜索</NavLink>
-            {isAuthenticated && (
+            {isAuthenticated && user && canCreateArticle(user) && (
               <NavLink to="/editor">写文章</NavLink>
             )}
           </div>

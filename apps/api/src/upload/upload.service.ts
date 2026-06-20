@@ -3,6 +3,7 @@ import {
   OnModuleInit,
   HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -21,9 +22,12 @@ const ALLOWED_MIME_TYPES = [
 @Injectable()
 export class UploadService implements OnModuleInit {
   private readonly uploadDir: string;
+  /** 应用对外访问的基础 URL，用于拼接上传文件的完整路径 */
+  private readonly appUrl: string;
 
-  constructor() {
-    this.uploadDir = process.env.UPLOAD_DIR || './uploads';
+  constructor(private configService: ConfigService) {
+    this.uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads';
+    this.appUrl = this.configService.get<string>('APP_URL') || '';
   }
 
   onModuleInit() {
@@ -61,8 +65,10 @@ export class UploadService implements OnModuleInit {
       .webp({ quality: 80 })
       .toFile(filePath);
 
+    // 返回完整 URL：APP_URL 有值时拼接为绝对路径，无值时返回相对路径（开发/同源场景）
+    const relativePath = `/uploads/${filename}`;
     return {
-      url: `/uploads/${filename}`,
+      url: this.appUrl ? `${this.appUrl}${relativePath}` : relativePath,
     };
   }
 }

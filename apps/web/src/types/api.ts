@@ -82,6 +82,19 @@ export function getRoleNames(user: { roles: UserRoleItem[] }): string[] {
   return user.roles.map((ur) => ur.role.name);
 }
 
+/**
+ * Helper: check if a user can create articles
+ *
+ * 对应后端权限 article:create，仅 ADMIN 和 AUTHOR 角色拥有此权限。
+ * READER 只有评论权限，不能写文章。前端据此隐藏"写文章"入口，
+ * 避免用户点进去后被 403 拒绝。
+ */
+export function canCreateArticle(user: { roles: UserRoleItem[] }): boolean {
+  return user.roles.some(
+    (ur) => ur.role.name === 'ADMIN' || ur.role.name === 'AUTHOR',
+  );
+}
+
 export interface UserStats {
   articleCount: number;
   totalLikes: number;
@@ -98,6 +111,7 @@ export interface UserProfile extends UserPublic {
 export interface LoginRequest {
   email: string;
   password: string;
+  fingerprint?: string;
 }
 
 export interface RegisterRequest {
@@ -124,6 +138,7 @@ export interface Session {
   ip: string;
   loginAt: string;
   lastActiveAt: string;
+  fingerprint?: string;
 }
 
 // ==================== Article ====================

@@ -63,6 +63,11 @@ export const ErrEmailRegistered   = 20020; // 邮箱已被注册
 export const ErrUsernameTaken     = 20021; // 用户名已被占用
 export const ErrDeviceLimit       = 20022; // 设备数量超过上限
 export const ErrSessionNotFound   = 20023; // 会话不存在
+export const ErrResetTokenExpired = 20024; // 重置令牌已过期
+export const ErrResetTokenInvalid = 20025; // 重置令牌无效
+export const ErrResetTokenUsed    = 20026; // 重置令牌已使用
+export const ErrResetCooldown     = 20027; // 重置邮件发送冷却中
+export const ErrMailSendFailed    = 20028; // 邮件发送失败
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  30001~30099 — 用户与资料
@@ -151,6 +156,11 @@ export const ERROR_MESSAGES: Record<number, string> = {
   [ErrUsernameTaken]:     '该用户名已被占用',
   [ErrDeviceLimit]:       '设备数量超过上限',
   [ErrSessionNotFound]:   '会话不存在',
+  [ErrResetTokenExpired]: '重置链接已过期，请重新申请',
+  [ErrResetTokenInvalid]: '重置链接无效',
+  [ErrResetTokenUsed]:    '重置链接已使用，请重新申请',
+  [ErrResetCooldown]:     '重置邮件发送过于频繁，请稍后再试',
+  [ErrMailSendFailed]:    '邮件发送失败，请稍后重试或联系管理员',
 
   [ErrUserNotFound]:      '用户不存在',
   [ErrCannotFollowSelf]:  '不能关注自己',
@@ -222,6 +232,11 @@ export const ERROR_HTTP_STATUS: Record<number, number> = {
   [ErrUsernameTaken]:     409,
   [ErrDeviceLimit]:       400,
   [ErrSessionNotFound]:   404,
+  [ErrResetTokenExpired]: 400,
+  [ErrResetTokenInvalid]: 400,
+  [ErrResetTokenUsed]:    400,
+  [ErrResetCooldown]:     429,
+  [ErrMailSendFailed]:    500,
   // 封禁 — 403
   [ErrAccountBanned]:     403,
 

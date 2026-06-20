@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn, resolveUploadUrl } from '@/lib/utils';
 
 interface AvatarProps {
   src: string | null | undefined;
@@ -17,10 +17,12 @@ export default function Avatar({ src, name, size = 'md', className }: AvatarProp
     .toUpperCase()
     .slice(0, 2);
 
-  if (src) {
+  const resolvedSrc = resolveUploadUrl(src);
+
+  if (resolvedSrc) {
     return (
       <img
-        src={src}
+        src={resolvedSrc}
         alt={name}
         className={cn('rounded-full object-cover', sizes[size], className)}
       />

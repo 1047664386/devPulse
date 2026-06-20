@@ -5,6 +5,7 @@ import { getRoleNames } from '@/types/api';
 import { profileApi, authApi } from '@/lib/api-services';
 import { useNavigate } from 'react-router-dom';
 import Input from '@/components/ui/Input';
+import PasswordInput from '@/components/ui/PasswordInput';
 import Button from '@/components/ui/Button';
 import Avatar from '@/components/ui/Avatar';
 import { Monitor, Smartphone, Globe, Trash2 } from 'lucide-react';
@@ -190,9 +191,9 @@ export default function SettingsPage() {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">修改密码</h2>
         <p className="text-sm text-gray-500 mb-4">修改密码后所有设备将自动下线，需要重新登录。</p>
         <div className="space-y-4">
-          <Input label="当前密码" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-          <Input label="新密码" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 位，含大小写和数字" />
-          <Input label="确认新密码" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+          <PasswordInput label="当前密码" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          <PasswordInput label="新密码" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 位，含大小写和数字" />
+          <PasswordInput label="确认新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
           <div className="flex items-center gap-3">
             <Button onClick={handleChangePassword} loading={changePasswordMutation.isPending}>修改密码</Button>
             {pwdMessage && (

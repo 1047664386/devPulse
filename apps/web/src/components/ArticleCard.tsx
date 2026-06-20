@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { ArticleListItem } from '@/types/api';
-import { formatDate, formatNumber, truncate } from '@/lib/utils';
+import { formatDate, formatNumber, truncate, resolveUploadUrl } from '@/lib/utils';
 import Avatar from '@/components/ui/Avatar';
 import TagBadge from '@/components/ui/TagBadge';
 import { Eye, Heart, MessageSquare } from 'lucide-react';
@@ -73,7 +73,7 @@ export default function ArticleCard({ article }: ArticleCardProps) {
         {/* Cover image */}
         {article.coverImage && (
           <img
-            src={article.coverImage}
+            src={resolveUploadUrl(article.coverImage)}
             alt=""
             className="hidden sm:block w-28 h-20 rounded-md object-cover flex-shrink-0"
           />

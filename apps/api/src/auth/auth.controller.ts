@@ -23,6 +23,10 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 // 刷新令牌接口入参DTO
 import { RefreshDto } from './dto/refresh.dto';
+// 忘记密码接口入参DTO
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+// 重置密码接口入参DTO
+import { ResetPasswordDto } from './dto/reset-password.dto';
 // JWT访问令牌守卫，校验接口Authorization头
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 // 自定义装饰器，从Token中解析当前登录用户ID
@@ -185,6 +189,30 @@ export class AuthController {
     // token不存在/解码失败，执行全部设备下线兜底策略
     this.clearRefreshCookie(res);
     return this.authService.logout(userId);
+  }
+
+  /**
+   * 忘记密码接口 — 发送重置邮件
+   * 安全设计：无论邮箱是否存在都返回统一消息，防止枚举邮箱
+   * 冷却机制：同一邮箱60秒内只能发送一次重置邮件
+   * @param dto 仅含 email 字段
+   */
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  /**
+   * 重置密码接口 — 验证令牌并更新密码
+   * 流程：校验JWT令牌 → Redis防重放 → 更新密码 → 强制全部设备下线
+   * 安全设计：令牌使用一次后失效，重置密码后所有设备必须重新登录
+   * @param dto 含 token（邮件中的重置令牌）+ newPassword（新密码）
+   */
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.token, dto.newPassword);
   }
 
   /**

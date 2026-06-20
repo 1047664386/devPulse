@@ -70,6 +70,15 @@ class EnvironmentVariables {
   @IsOptional()
   FRONTEND_URL?: string;
 
+  /**
+   * 后端对外访问的基础 URL（不含尾部斜杠）
+   * 用于 UploadService 拼接上传文件的完整 URL（头像、封面图等）
+   * 留空时返回相对路径 /uploads/xxx，适用于开发和同源部署
+   */
+  @IsString()
+  @IsOptional()
+  APP_URL?: string;
+
   /** 初始超级管理员邮箱 */
   @IsString()
   @IsOptional()
@@ -79,6 +88,33 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   ADMIN_PASSWORD?: string;
+
+  /** SMTP 邮件服务器地址（可选，未配置时使用 ethereal 测试邮箱） */
+  @IsString()
+  @IsOptional()
+  SMTP_HOST?: string;
+
+  /** SMTP 邮件服务器端口 */
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  SMTP_PORT?: number;
+
+  /** SMTP 登录用户名 */
+  @IsString()
+  @IsOptional()
+  SMTP_USER?: string;
+
+  /** SMTP 登录密码 */
+  @IsString()
+  @IsOptional()
+  SMTP_PASS?: string;
+
+  /** 发件人地址（如 noreply@devpulse.com） */
+  @IsString()
+  @IsOptional()
+  MAIL_FROM?: string;
 }
 
 /**

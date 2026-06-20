@@ -94,6 +94,7 @@ function processQueue(error: unknown) {
 function clearAuth() {
   sessionStorage.removeItem('accessToken');
   sessionStorage.removeItem('refreshToken');
+  sessionStorage.removeItem('user');
   window.location.href = '/login';
 }
 

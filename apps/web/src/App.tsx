@@ -8,6 +8,8 @@ import ArticleEditorPage from '@/features/article/ArticleEditorPage';
 import TagsPage from '@/features/article/TagsPage';
 import LoginPage from '@/features/auth/LoginPage';
 import RegisterPage from '@/features/auth/RegisterPage';
+import ForgotPasswordPage from '@/features/auth/ForgotPasswordPage';
+import ResetPasswordPage from '@/features/auth/ResetPasswordPage';
 import UserProfilePage from '@/features/user/UserProfilePage';
 import SettingsPage from '@/features/user/SettingsPage';
 import BookmarksPage from '@/features/user/BookmarksPage';
@@ -54,6 +56,22 @@ function App() {
               </AuthLayout>
             }
           />
+          <Route
+            path="/forgot-password"
+            element={
+              <AuthLayout>
+                <ForgotPasswordPage />
+              </AuthLayout>
+            }
+          />
+          <Route
+            path="/reset-password"
+            element={
+              <AuthLayout>
+                <ResetPasswordPage />
+              </AuthLayout>
+            }
+          />
 
           {/* Admin routes (sidebar layout) */}
           <Route path="/admin" element={<AdminLayout />}>
@@ -69,8 +87,8 @@ function App() {
           <Route element={<MainLayout />}>
             <Route index element={<HomePage />} />
             <Route path="article/:slug" element={<ArticleDetailPage />} />
-            <Route path="editor" element={<ProtectedRoute><ArticleEditorPage /></ProtectedRoute>} />
-            <Route path="editor/:id" element={<ProtectedRoute><ArticleEditorPage /></ProtectedRoute>} />
+            <Route path="editor" element={<ProtectedRoute requiredRoles={['ADMIN', 'AUTHOR']}><ArticleEditorPage /></ProtectedRoute>} />
+            <Route path="editor/:id" element={<ProtectedRoute requiredRoles={['ADMIN', 'AUTHOR']}><ArticleEditorPage /></ProtectedRoute>} />
             <Route path="tags" element={<TagsPage />} />
             <Route path="users/:id" element={<UserProfilePage />} />
             <Route path="settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />

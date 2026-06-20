@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, Matches, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class RegisterDto {
@@ -26,4 +26,13 @@ export class RegisterDto {
   @MinLength(2)
   @MaxLength(30)
   displayName!: string;
+
+  /**
+   * 前端设备指纹（FNV-1a 哈希）
+   * 用于识别同一浏览器的重复登录，实现会话 UPDATE 而非 INSERT。
+   */
+  @ApiProperty({ example: 'a3f1c9b2', required: false })
+  @IsOptional()
+  @IsString()
+  fingerprint?: string;
 }
