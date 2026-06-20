@@ -1,10 +1,7 @@
 # ─── Stage 1: Build ──────────────────────────────────────
 FROM node:22-alpine AS builder
 
-# Install pnpm directly (corepack hits npmjs.org which is blocked in China)
 RUN npm install -g pnpm@latest
-
-# Use China npm mirror for faster downloads
 RUN pnpm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
@@ -14,25 +11,20 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/api/prisma apps/api/prisma/
 
-# Install dependencies (all, including dev for build)
+# Install all dependencies (including devDependencies for build)
 RUN pnpm install --frozen-lockfile --filter api
 
-# Copy source code
-COPY apps/api/tsconfig.json apps/api/tsconfig.json
-COPY apps/api/tsconfig.build.json apps/api/tsconfig.build.json
-COPY apps/api/nest-cli.json apps/api/nest-cli.json
-COPY apps/api/src apps/api/src/
+# Copy ALL source code at once
+COPY apps/api/ apps/api/
 
 # Generate Prisma Client & build
-RUN cd apps/api && npx prisma generate && ./node_modules/.bin/nest build
+RUN cd apps/api && npx prisma generate && pnpm exec nest build && ls -la dist/
 
 # ─── Stage 2: Production ─────────────────────────────────
 FROM node:22-alpine AS runner
 
 RUN npm install -g pnpm@latest \
     && apk add --no-cache curl
-
-# Use China npm mirror for faster downloads
 RUN pnpm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
@@ -56,7 +48,6 @@ WORKDIR /app/apps/api
 
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/api/docs || exit 1
 
