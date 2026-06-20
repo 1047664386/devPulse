@@ -1,5 +1,5 @@
-// Production-only Prisma config (plain JS, no ts-node/dotenv needed)
-// DATABASE_URL is already set via docker-compose environment
+// Production-only Prisma config (plain JS, no ts-node needed)
+require("dotenv/config");
 const { defineConfig } = require("prisma/config");
 
 module.exports = defineConfig({

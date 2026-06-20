@@ -47,22 +47,9 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
 
   // 开启跨域CORS，允许前端页面跨域请求后端接口
-  // 支持多个来源：FRONTEND_URL 用逗号分隔多个地址（IP + 域名）
-  const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
-    .split(',')
-    .map((url) => url.trim());
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void,
-    ) => {
-      // 允许无 origin 的请求（服务端调用、curl 等）
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(null, false);
-      }
-    },
+    // 前端地址从环境变量读取，无环境变量则默认本地5173端口(Vite默认端口)
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     // 允许跨域携带Cookie、Token凭证
     credentials: true,
     maxAge: 86400, // 预检缓存24小时，大幅减少OPTIONS请求
