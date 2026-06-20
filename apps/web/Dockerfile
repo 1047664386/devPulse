@@ -1,11 +1,12 @@
 # ─── Stage 1: Build ──────────────────────────────────────
 FROM node:22-alpine AS builder
 
-# Install pnpm directly (corepack hits npmjs.org which is blocked in China)
-RUN npm install -g pnpm@latest
-
-# Use China npm mirror for faster downloads
-RUN pnpm config set registry https://registry.npmmirror.com
+RUN npm config set registry https://registry.npmmirror.com && npm install -g pnpm@latest
+RUN pnpm config set registry https://registry.npmmirror.com \
+    && pnpm config set fetch-timeout 600000 \
+    && pnpm config set fetch-retries 5 \
+    && pnpm config set fetch-retry-mintimeout 30000 \
+    && pnpm config set fetch-retry-maxtimeout 120000
 
 WORKDIR /app
 

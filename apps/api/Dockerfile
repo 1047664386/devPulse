@@ -48,12 +48,16 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/api/prisma apps/api/prisma/
 
-# Install production dependencies only
+# Install production dependencies only (dotenv + prisma are in dependencies now)
 RUN pnpm install --frozen-lockfile --filter api --prod
 
 # Copy built artifacts from builder
 COPY --from=builder /app/apps/api/dist apps/api/dist/
-COPY --from=builder /app/apps/api/src/generated apps/api/src/generated/
+# Copy src for seed.ts (it imports ../src/common/constants/permissions)
+COPY --from=builder /app/apps/api/src apps/api/src/
+# Copy tsconfig for tsx path resolution during seed
+COPY --from=builder /app/apps/api/tsconfig.json apps/api/tsconfig.json
+COPY --from=builder /app/apps/api/tsconfig.build.json apps/api/tsconfig.build.json
 # Copy prisma config (JS version for production, no ts-node needed)
 COPY apps/api/prisma.config.js apps/api/prisma.config.js
 
@@ -67,4 +71,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/api/docs || exit 1
 
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/src/main"]
+# Auto-run prisma migrate on startup, then start the app
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main"]
