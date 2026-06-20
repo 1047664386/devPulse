@@ -4011,6 +4011,109 @@ const deviceId = dto.fingerprint
 | 会话存储 | **Redis Hash**（现有架构） | 自动 TTL、原子操作、管道批量，优于每次走 DB |
 | 无指纹兼容 | **退回随机 UUID** | 旧客户端/APP 端无感知，逐步迁移 |
 
+### 15.7 删除登录设备后当前账号未退出
+
+**现象：** 在"登录设备"页面点击垃圾桶删除所有设备，页面显示"暂无活跃设备"，但当前账号仍然保持登录状态，可以继续操作。
+
+**根因：** `logoutDevice` 仅删除 Redis 中的会话记录，不清理浏览器本地的 accessToken（sessionStorage）和 refreshToken（Cookie）。前端 `onSuccess` 只刷新设备列表，没有判断删除的是否是当前设备。accessToken 在 15 分钟内仍有效，过期后 refresh 时才发现 Redis 无会话而退出，体验割裂。
+
+**修复方案：**
+
+1. **后端标记当前设备**：AccessToken payload 新增 `deviceId` 字段，`getSessions` 从 Bearer Token 解码出当前 deviceId，返回 `isCurrent: true` 标记。
+2. **前端 UI 标识**：当前设备卡片蓝色高亮 + "当前设备"徽章，删除时弹出二次确认。
+3. **删除即退出**：`onSuccess` 回调检查被删设备的 `isCurrent` 标志，若为 true 立即调用 `logout()` 清理本地 token 并跳转登录页。
+
+### 15.8 登出后重新登录，设备列表仍显示旧数据
+
+**现象：** 在设置页删除旧设备 → 退出登录 → 重新登录 → 进入设置页，"登录设备"列表仍然显示上一次会话的旧数据（包括已被删除的设备），手动刷新页面后才恢复正常。
+
+**根因：** TanStack Query 全局配置了 `staleTime: 5min`，即查询数据在 5 分钟内被视为"新鲜"，不会重新请求。登出时 `authStore.logout()` 只清理了 `sessionStorage`（token + user），但 TanStack Query 的内存缓存（包括 `['sessions']`、`['auth-me']`、`['notifications']` 等所有查询）未清理。重新登录后如果距上次查询不到 5 分钟，`useQuery({ queryKey: ['sessions'] })` 命中旧缓存直接返回，不发请求。
+
+**修复方案：** 将 `QueryClient` 从 `App.tsx` 抽到独立模块 `lib/queryClient.ts`，使非组件代码（Zustand store、axios 拦截器）也能引用。在三个登出入口统一调用 `queryClient.clear()` 清空所有查询缓存：
+
+```typescript
+// lib/queryClient.ts — 全局单例
+export default new QueryClient({ defaultOptions: { queries: { staleTime: 5min } } });
+
+// authStore.ts — 登出 + 登入
+login: (user, accessToken, refreshToken) => {
+  queryClient.clear();  // 清理上一会话残留缓存
+  // ... 写入 token + user
+},
+logout: () => {
+  queryClient.clear();  // 清理当前会话缓存
+  // ... 清除 token + user
+},
+
+// api.ts — 401 强制登出
+function clearAuth() {
+  queryClient.clear();
+  // ... 清除 token + user + 跳转登录页
+}
+```
+
+### 15.9 发布文章后首页列表不刷新 / 点赞评论后卡片数据不同步
+
+**现象：** 写完文章发布成功后，跳转回首页看不到新文章；在文章详情页点赞/评论后返回列表页，卡片上的点赞数/评论数仍是旧值；后台删除文章后前台列表不更新；设置页上传头像后 Header 头像不更新；标记通知已读后 Header 未读数角标不消失。
+
+**根因：** 全局 `staleTime: 5min`，`useMutation` 的 `onSuccess` 回调中只 invalidate 了当前页面直接相关的 queryKey，缺少跨页面级联失效。例如文章编辑器只 `navigate()` 不 invalidate `['articles']`；点赞 mutation 只 invalidate `['article', slug]`（详情页），不 invalidate `['articles']`（列表页）。
+
+**修复方案 — 全量排查所有 mutation 的级联 invalidate：**
+
+| 页面 | Mutation | 补充的 invalidate |
+|------|----------|------------------|
+| ArticleEditorPage | createMutation | `['articles']`, `['user-articles']` |
+| ArticleEditorPage | updateMutation | `['article', slug]`, `['articles']`, `['user-articles']` |
+| ArticleDetailPage | likeMutation | `['articles']`, `['user-articles']`（列表卡片点赞数） |
+| ArticleDetailPage | bookmarkMutation | `['bookmarks']`（收藏夹页面） |
+| ArticleDetailPage | postCommentMutation | `['article', slug]`, `['articles']`（评论数） |
+| SettingsPage | avatarMutation | `['auth-me']`（Header 头像） |
+| SettingsPage | saveProfileMutation | `['auth-me']`（Header 昵称） |
+| NotificationsPage | markRead/markAllRead | `['unread-count']`（Header 未读角标） |
+| AdminArticlesManagePage | deleteMutation | `['articles']`, `['user-articles']`（前台列表） |
+| AdminTagsManagePage | deleteMutation | `['tags']`（前台标签侧栏） |
+
+设计原则：**mutation 改了哪个后端资源，所有读取该资源的 queryKey 都必须 invalidate**。不仅限于当前页面使用的 queryKey，还要考虑其他页面可能缓存了同一份数据。
+
+### 15.10 草稿保存功能缺陷（校验 / 错误跳转 / 无草稿页 / 无标签选择）
+
+**问题描述：** 草稿保存存在四个关联问题：① 草稿走了和发布相同的 `CreateArticleDto`，title MinLength(5) + content MinLength(1) 校验导致短标题或空内容无法保存草稿；② 保存成功后 `onSuccess` 直接 `navigate(/article/${slug})` 跳到文章详情页，而 `findBySlug` 只查 PUBLISHED 文章，所以 100% 报 40001 "内容不存在"；③ 没有「我的草稿」页面，用户无法找到和管理已保存的草稿；④ 编辑器没有标签选择器，无法为文章打标签。
+
+**根因分析：**
+
+| 问题 | 根因 |
+|------|------|
+| 草稿被校验拦截 | `CreateArticleDto` 的 `@MinLength(5)` / `@MinLength(1)` 对草稿不适用 |
+| 保存后 40001 | `onSuccess` → `navigate(/article/${slug})` → `findBySlug` 只查 `status='PUBLISHED'` |
+| 无草稿页面 | 缺少 `GET /articles/drafts` 接口和前端草稿列表页 |
+| 无标签选择 | 编辑器未集成 `tagApi.list` + 多选 UI |
+
+**修复方案：**
+
+1. **后端新增 SaveDraftDto**（`apps/api/src/article/dto/save-draft.dto.ts`）：所有字段 `@IsOptional()`，不做任何长度/格式校验。新增三个接口：
+   - `POST /articles/save-draft` — 创建新草稿，标题为空时自动填 "无标题草稿"
+   - `PUT /articles/:id/save-draft` — 更新已有草稿（仅校验所属权，不走 optimistic lock）
+   - `GET /articles/drafts` — 获取当前用户的草稿列表（按 `updatedAt DESC` 排序）
+
+2. **前端编辑器拆分两条保存路径**（`ArticleEditorPage.tsx`）：
+   - **存草稿**：无校验 → `saveDraft` / `updateDraft` → 不跳页，仅显示 "✓ 已保存" 状态提示；首次保存后用 `navigate(replace)` 把 URL 从 `/editor` 切换到 `/editor/:id`
+   - **发布**：保留前端校验（标题≥5字符 + 内容非空） → `create` / `update` → 跳文章详情页
+   - 额外：`Ctrl/Cmd+S` 快捷键绑定到草稿保存
+
+3. **新建 MyDraftsPage**（`apps/web/src/features/article/MyDraftsPage.tsx`）：queryKey `['my-drafts']`，支持分页、继续编辑（跳 `/editor/:id`）、删除草稿。路由 `/drafts`，MainLayout 头像下拉菜单 + 移动端导航均有入口。
+
+4. **编辑器集成标签选择器**：`useQuery(['tags'])` 获取全量标签，渲染为可点击的 chip 列表，选中态蓝底 + ✓，数据存储到 `selectedTagIds` 状态。保存草稿和发布时均携带 `tagIds`。
+
+5. **UpdateArticleDto 增加 status 字段**：支持从草稿页直接发布（`PUT /articles/:id` + `status: 'PUBLISHED'`）。`update()` 方法的 optimistic lock SQL 新增 `status` 和 `published_at` 字段，DRAFT → PUBLISHED 时自动设置 `publishedAt`。
+
+### 15.11 点击编辑按钮不回填标题/内容/标签
+
+**问题描述：** 从文章详情页点击"编辑"按钮进入编辑器，标题、正文、标签全部为空。
+
+**根因分析：** 重写编辑器时将 `useSearchParams` 改为 `useParams` 取 `editId`，但 `ArticleDetailPage` 的编辑链接仍是旧格式 `/editor?id=xxx`（query string），不匹配 `/editor/:id` 路由。导致 `editId = undefined` → `useQuery.enabled = false` → `existingArticle` 始终为空 → `useEffect` 不触发。
+
+**修复方案：** ① `ArticleDetailPage` 的链接改为 `/editor/${article.id}`；② 编辑器同时读取 `useParams` 和 `useSearchParams`，取 `paramId || searchParams.get('id')` 作为 `editId`，兼容两种 URL 格式。`useEffect` 依赖数组增加 `editId` 确保路由参数变化时重新触发回填。
+
 ---
 
 ## 十六、项目技术亮点
@@ -4062,6 +4165,10 @@ Prisma 7 弃用传统 `datasource.db.url` 直连方式，改用 `@prisma/adapter
 ### 16.12 全文搜索 PL/pgSQL 触发器 + GIN 索引
 
 通过 PostgreSQL 的 `BEFORE INSERT OR UPDATE` 触发器自动将文章标题和正文转换为 `tsvector` 类型并存储在专用列中。查询时使用 `@@ ts_query` 配合 GIN 索引实现毫秒级全文搜索，无需引入 Elasticsearch 等外部搜索引擎，降低了系统复杂度和运维成本。
+
+### 16.13 草稿双通道保存 + 标签多选芯片 + 自由创建
+
+编辑器将「存草稿」和「发布」拆成两条独立的 mutation 路径。草稿走 `SaveDraftDto`（全字段 `@IsOptional`，无校验），首次保存后用 `navigate(replace)` 把 URL 从 `/editor` 切换到 `/editor/:id`，后续保存直接 `PUT /:id/save-draft`，全程不刷新页面，仅用状态文字 "✓ 已保存" 反馈。发布走 `CreateArticleDto`（带 MinLength 校验），成功后跳文章详情页。额外绑定 `Ctrl/Cmd+S` 快捷键到草稿保存。编辑器兼容两种 URL 格式：`/editor/:id`（路由参数，草稿页跳转）和 `/editor?id=xxx`（查询参数，文章详情页编辑按钮）。标签选择器采用业内最佳实践（掘金/Medium/Stack Overflow 混合模式）：展示已有标签供点选，同时提供输入框让用户键入新标签名按 Enter 创建。输入时实时过滤匹配项，最多展示 10 个候选；若精确匹配已有标签则自动选中，否则创建新标签。后端 `POST /tags` 权限从 `tag:manage`（ADMIN）放宽为 `JwtAuthGuard`（任何已登录用户），允许社区自由共建标签体系。
 
 ---
 

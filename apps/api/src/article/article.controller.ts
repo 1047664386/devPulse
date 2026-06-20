@@ -10,11 +10,14 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ArticleService } from './article.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
+import { SaveDraftDto } from './dto/save-draft.dto';
 import { ArticleListQueryDto } from './dto/article-list-query.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OptionalAuthGuard } from '../common/guards/optional-auth.guard';
@@ -35,6 +38,18 @@ export class ArticleController {
     @CurrentUser('id') userId?: string,
   ) {
     return this.articleService.findAll(query, userId);
+  }
+
+  @Get('drafts')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List current user's drafts" })
+  getMyDrafts(
+    @CurrentUser('id') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
+  ) {
+    return this.articleService.getMyDrafts(userId, page, pageSize);
   }
 
   @Get('id/:id')
@@ -70,6 +85,19 @@ export class ArticleController {
     return this.articleService.create(dto, userId);
   }
 
+  @Post('save-draft')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermission('article:create')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Save a new draft (no validation)' })
+  @HttpCode(HttpStatus.CREATED)
+  saveDraft(
+    @Body() dto: SaveDraftDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.articleService.saveDraft(dto, userId);
+  }
+
   @Put(':id')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermission('article:update:any')
@@ -81,6 +109,18 @@ export class ArticleController {
     @CurrentUser('id') userId: string,
   ) {
     return this.articleService.update(id, dto, userId);
+  }
+
+  @Put(':id/save-draft')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a draft (no validation, owner only)' })
+  updateDraft(
+    @Param('id') id: string,
+    @Body() dto: SaveDraftDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.articleService.updateDraft(id, dto, userId);
   }
 
   @Delete(':id')

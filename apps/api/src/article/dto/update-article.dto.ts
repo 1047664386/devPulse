@@ -4,6 +4,7 @@ import {
   IsArray,
   IsUUID,
   IsInt,
+  IsIn,
 } from 'class-validator';
 
 export class UpdateArticleDto {
@@ -27,6 +28,10 @@ export class UpdateArticleDto {
   @IsArray()
   @IsUUID('all', { each: true })
   tagIds?: string[];
+
+  @IsOptional()
+  @IsIn(['DRAFT', 'PUBLISHED'])
+  status?: string;
 
   @IsInt()
   version: number;

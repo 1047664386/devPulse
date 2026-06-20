@@ -31,6 +31,8 @@ export default function NotificationsPage() {
     mutationFn: () => notificationApi.markAllRead(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      // Header 导航栏的未读数角标也需要同步
+      queryClient.invalidateQueries({ queryKey: ['unread-count'] });
     },
   });
 
@@ -38,6 +40,7 @@ export default function NotificationsPage() {
     mutationFn: (id: string) => notificationApi.markRead(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['unread-count'] });
     },
   });
 

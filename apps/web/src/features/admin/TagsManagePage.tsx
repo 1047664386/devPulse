@@ -15,6 +15,8 @@ export default function TagsManagePage() {
     mutationFn: (id: string) => adminApi.deleteTag(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-tags'] });
+      // 前台标签侧栏也需要同步
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
     },
   });
 

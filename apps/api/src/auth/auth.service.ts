@@ -418,7 +418,7 @@ export class AuthService {
    * - 旧会话使用随机 UUID，可能存在同一浏览器的多条孤儿记录
    * - 按 fingerprint 分组，同一指纹仅保留最近活跃的一条，其余自动清理
    */
-  async getSessions(userId: string) {
+  async getSessions(userId: string, currentDeviceId?: string | null) {
     // 读取该用户所有设备ID集合
     const deviceIds = await this.redis.smembers(`rt:${userId}:_devices`);
     if (deviceIds.length === 0) return [];
@@ -443,6 +443,7 @@ export class AuthService {
           loginAt: data.loginAt || '',
           lastActiveAt: data.lastActiveAt || '',
           fingerprint: data.fingerprint || '',
+          isCurrent: deviceId === currentDeviceId,
         };
       })
       .filter((s): s is NonNullable<typeof s> => s !== null);
@@ -672,7 +673,7 @@ export class AuthService {
     const [accessToken, refreshToken] = await Promise.all([
       // 短期访问令牌，业务接口鉴权
       this.jwtService.signAsync(
-        { sub: userId, email, tokenVersion },
+        { sub: userId, email, tokenVersion, deviceId },
         {
           secret: this.configService.get<string>('JWT_SECRET'),
           expiresIn: this.configService.get<string>('JWT_EXPIRES_IN', '15m'),

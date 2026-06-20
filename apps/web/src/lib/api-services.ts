@@ -16,6 +16,7 @@ import type {
   PaginationMeta,
   RoleDetail,
   RoleListItem,
+  SaveDraftRequest,
   SearchResult,
   SearchSuggestion,
   Session,
@@ -78,6 +79,22 @@ export const articleApi = {
 
   toggleBookmark: (id: string) =>
     api.post<ApiResponse<BookmarkToggleResponse>>(`/articles/${id}/bookmark`).then((r) => r.data.data),
+
+  // ─── Draft ──────────────────────────────────────────
+
+  /** 创建新草稿（无格式校验） */
+  saveDraft: (data: SaveDraftRequest) =>
+    api.post<ApiResponse<ArticleDetail>>('/articles/save-draft', data).then((r) => r.data.data),
+
+  /** 更新已有草稿（无格式校验） */
+  updateDraft: (id: string, data: SaveDraftRequest) =>
+    api.put<ApiResponse<ArticleDetail>>(`/articles/${id}/save-draft`, data).then((r) => r.data.data),
+
+  /** 获取当前用户的草稿列表 */
+  getDrafts: (params?: { page?: number; pageSize?: number }) =>
+    api
+      .get<{ data: ArticleListItem[]; meta: PaginationMeta }>('/articles/drafts', { params })
+      .then((r) => r.data),
 };
 
 // ==================== Tags ====================

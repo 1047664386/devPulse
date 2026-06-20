@@ -1,10 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import queryClient from '@/lib/queryClient';
 import MainLayout from '@/layouts/MainLayout';
 import AuthLayout from '@/layouts/AuthLayout';
 import HomePage from '@/features/article/HomePage';
 import ArticleDetailPage from '@/features/article/ArticleDetailPage';
 import ArticleEditorPage from '@/features/article/ArticleEditorPage';
+import MyDraftsPage from '@/features/article/MyDraftsPage';
 import TagsPage from '@/features/article/TagsPage';
 import LoginPage from '@/features/auth/LoginPage';
 import RegisterPage from '@/features/auth/RegisterPage';
@@ -23,16 +25,6 @@ import TagsManagePage from '@/features/admin/TagsManagePage';
 import RolesManagePage from '@/features/admin/RolesManagePage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import PermissionsManagePage from '@/features/admin/PermissionsManagePage';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5,
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
 
 function App() {
   return (
@@ -89,6 +81,7 @@ function App() {
             <Route path="article/:slug" element={<ArticleDetailPage />} />
             <Route path="editor" element={<ProtectedRoute requiredRoles={['ADMIN', 'AUTHOR']}><ArticleEditorPage /></ProtectedRoute>} />
             <Route path="editor/:id" element={<ProtectedRoute requiredRoles={['ADMIN', 'AUTHOR']}><ArticleEditorPage /></ProtectedRoute>} />
+            <Route path="drafts" element={<ProtectedRoute requiredRoles={['ADMIN', 'AUTHOR']}><MyDraftsPage /></ProtectedRoute>} />
             <Route path="tags" element={<TagsPage />} />
             <Route path="users/:id" element={<UserProfilePage />} />
             <Route path="settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />

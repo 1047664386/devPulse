@@ -56,6 +56,9 @@ export default function ArticleDetailPage() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['article', slug] });
+      // 列表卡片上的点赞数也需要同步
+      queryClient.invalidateQueries({ queryKey: ['articles'] });
+      queryClient.invalidateQueries({ queryKey: ['user-articles'] });
     },
   });
 
@@ -79,6 +82,8 @@ export default function ArticleDetailPage() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['article', slug] });
+      // 收藏夹页面需要同步
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
     },
   });
 
@@ -87,6 +92,9 @@ export default function ArticleDetailPage() {
     onSuccess: () => {
       setCommentText('');
       queryClient.invalidateQueries({ queryKey: ['comments', article?.id] });
+      // 文章卡片的评论数也需要同步
+      queryClient.invalidateQueries({ queryKey: ['article', slug] });
+      queryClient.invalidateQueries({ queryKey: ['articles'] });
     },
   });
 
@@ -175,7 +183,7 @@ export default function ArticleDetailPage() {
           </div>
 
           {isAuthor && (
-            <Link to={`/editor?id=${article.id}`}>
+            <Link to={`/editor/${article.id}`}>
               <Button variant="secondary" size="sm">编辑</Button>
             </Link>
           )}

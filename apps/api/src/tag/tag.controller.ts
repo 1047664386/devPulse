@@ -12,8 +12,6 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TagService } from './tag.service';
 import { CreateTagDto } from './dto/create-tag.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../common/permission/permissions.guard';
-import { RequirePermission } from '../common/permission/require-permission.decorator';
 
 @ApiTags('Tags')
 @Controller('tags')
@@ -33,10 +31,9 @@ export class TagController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermission('tag:manage')
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a new tag (ADMIN only)' })
+  @ApiOperation({ summary: 'Create a new tag (any authenticated user)' })
   @HttpCode(HttpStatus.CREATED)
   create(@Body() dto: CreateTagDto) {
     return this.tagService.create(dto);

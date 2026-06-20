@@ -17,6 +17,9 @@ export default function ArticlesManagePage() {
     mutationFn: (id: string) => adminApi.deleteArticle(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-articles'] });
+      // 前台文章列表和用户文章列表也需要同步
+      queryClient.invalidateQueries({ queryKey: ['articles'] });
+      queryClient.invalidateQueries({ queryKey: ['user-articles'] });
     },
   });
 

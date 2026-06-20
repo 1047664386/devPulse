@@ -139,6 +139,7 @@ export interface Session {
   loginAt: string;
   lastActiveAt: string;
   fingerprint?: string;
+  isCurrent?: boolean;
 }
 
 // ==================== Article ====================
@@ -184,7 +185,16 @@ export interface UpdateArticleRequest {
   summary?: string;
   coverImage?: string;
   tagIds?: string[];
+  status?: ArticleStatus;
   version: number;
+}
+
+export interface SaveDraftRequest {
+  title?: string;
+  content?: string;
+  summary?: string;
+  coverImage?: string;
+  tagIds?: string[];
 }
 
 export interface ArticleListParams {

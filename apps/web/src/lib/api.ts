@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { ApiError, ApiResponse } from '@/types/api';
+import queryClient from '@/lib/queryClient';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -92,6 +93,7 @@ function processQueue(error: unknown) {
 }
 
 function clearAuth() {
+  queryClient.clear();
   sessionStorage.removeItem('accessToken');
   sessionStorage.removeItem('refreshToken');
   sessionStorage.removeItem('user');

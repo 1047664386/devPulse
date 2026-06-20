@@ -10,6 +10,7 @@ import {
   Bell,
   BookMarked,
   Feather,
+  FileEdit,
   LogIn,
   LogOut,
   Menu,
@@ -150,6 +151,15 @@ export default function MainLayout() {
                         >
                           <BookMarked className="w-4 h-4" /> 我的收藏
                         </Link>
+                        {canCreateArticle(user) && (
+                          <Link
+                            to="/drafts"
+                            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            onClick={() => setProfileOpen(false)}
+                          >
+                            <FileEdit className="w-4 h-4" /> 我的草稿
+                          </Link>
+                        )}
                         <Link
                           to="/settings"
                           className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -212,7 +222,10 @@ export default function MainLayout() {
             <NavLink to="/tags">标签</NavLink>
             <NavLink to="/search">搜索</NavLink>
             {isAuthenticated && user && canCreateArticle(user) && (
-              <NavLink to="/editor">写文章</NavLink>
+              <>
+                <NavLink to="/editor">写文章</NavLink>
+                <NavLink to="/drafts">我的草稿</NavLink>
+              </>
             )}
           </div>
         )}

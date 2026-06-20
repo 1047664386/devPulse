@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
+import { SaveDraftDto } from './dto/save-draft.dto';
 import { ArticleListQueryDto } from './dto/article-list-query.dto';
 import { REDIS_CLIENT } from '../common/redis/redis.module';
 import { BusinessException } from '../common/exceptions/business.exception';
@@ -281,11 +282,18 @@ export class ArticleService {
       ? calculateReadTime(dto.content)
       : article.readTimeMinutes;
 
+    // Handle status transition: DRAFT → PUBLISHED sets publishedAt
+    const newStatus = (dto.status ?? article.status) as string;
+    const wasPublished = article.status === 'PUBLISHED';
+    const willPublish = newStatus === 'PUBLISHED';
+    const publishedAt = willPublish && !wasPublished ? new Date() : article.publishedAt;
+
     // Optimistic lock update
     const result = await this.prisma.$executeRawUnsafe(
       `UPDATE articles
        SET title = $1, content = $2, summary = $3, cover_image = $4,
-           read_time_minutes = $5, version = version + 1, updated_at = NOW()
+           read_time_minutes = $5, version = version + 1, updated_at = NOW(),
+           status = $8, published_at = $9
        WHERE id = $6::uuid AND version = $7 AND deleted_at IS NULL`,
       newTitle,
       newContent,
@@ -294,6 +302,8 @@ export class ArticleService {
       newReadTime,
       id,
       dto.version,
+      newStatus,
+      publishedAt,
     );
 
     if (result === 0) {
@@ -469,5 +479,189 @@ export class ArticleService {
       });
       return { bookmarked: true };
     }
+  }
+
+  // ─── Draft: Save (Create New) ────────────────────────
+
+  async saveDraft(dto: SaveDraftDto, userId: string) {
+    const title = dto.title?.trim() || '无标题草稿';
+    const slug = generateSlug(title);
+    const content = dto.content ?? '';
+
+    const article = await this.prisma.article.create({
+      data: {
+        title,
+        slug,
+        content,
+        summary: dto.summary,
+        coverImage: dto.coverImage,
+        status: 'DRAFT',
+        readTimeMinutes: calculateReadTime(content),
+        authorId: userId,
+        publishedAt: null,
+        tags: dto.tagIds?.length
+          ? { connect: dto.tagIds.map((id) => ({ id })) }
+          : undefined,
+      },
+      include: {
+        author: { select: AUTHOR_PUBLIC_FIELDS },
+        tags: true,
+      },
+    });
+
+    // Increment articleCount on connected tags
+    if (dto.tagIds?.length) {
+      await this.prisma.$executeRaw`
+        UPDATE tags
+        SET article_count = article_count + 1
+        WHERE id IN (${Prisma.join(dto.tagIds.map((id) => Prisma.sql`${id}::uuid`))})
+      `;
+    }
+
+    return article;
+  }
+
+  // ─── Draft: Update Existing (No Validation) ─────────
+
+  async updateDraft(id: string, dto: SaveDraftDto, userId: string) {
+    const article = await this.prisma.article.findUnique({
+      where: { id },
+      include: { tags: true },
+    });
+
+    if (!article || article.deletedAt) {
+      throw new BusinessException(ErrArticleNotFound, { httpStatus: HttpStatus.NOT_FOUND });
+    }
+
+    // Check ownership or admin
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { roles: { select: { role: { select: { name: true } } } } },
+    });
+    const isAdmin =
+      user?.roles?.some((ur) => ur.role.name === 'ADMIN') ?? false;
+
+    if (article.authorId !== userId && !isAdmin) {
+      throw new BusinessException(ErrArticleNoPerm, {
+        httpStatus: HttpStatus.FORBIDDEN,
+        detail: 'You do not have permission to update this article',
+      });
+    }
+
+    // Update without strict validation — draft can be partial
+    const newTitle = dto.title !== undefined ? (dto.title.trim() || '无标题草稿') : article.title;
+    const newContent = dto.content !== undefined ? dto.content : article.content;
+    const newSummary = dto.summary !== undefined ? dto.summary : article.summary;
+    const newCoverImage = dto.coverImage !== undefined ? dto.coverImage : article.coverImage;
+
+    await this.prisma.article.update({
+      where: { id },
+      data: {
+        title: newTitle,
+        content: newContent,
+        summary: newSummary,
+        coverImage: newCoverImage,
+        readTimeMinutes: calculateReadTime(newContent),
+      },
+    });
+
+    // Handle tag changes
+    if (dto.tagIds !== undefined) {
+      const oldTagIds = article.tags.map((t) => t.id);
+      const newTagIds = dto.tagIds;
+
+      const removedTagIds = oldTagIds.filter((id) => !newTagIds.includes(id));
+      const addedTagIds = newTagIds.filter((id) => !oldTagIds.includes(id));
+
+      if (removedTagIds.length) {
+        await this.prisma.article.update({
+          where: { id },
+          data: {
+            tags: { disconnect: removedTagIds.map((tagId) => ({ id: tagId })) },
+          },
+        });
+        await this.prisma.$executeRaw`
+          UPDATE tags
+          SET article_count = GREATEST(0, article_count - 1)
+          WHERE id IN (${Prisma.join(removedTagIds.map((tid) => Prisma.sql`${tid}::uuid`))})
+        `;
+      }
+
+      if (addedTagIds.length) {
+        await this.prisma.article.update({
+          where: { id },
+          data: {
+            tags: { connect: addedTagIds.map((tagId) => ({ id: tagId })) },
+          },
+        });
+        await this.prisma.$executeRaw`
+          UPDATE tags
+          SET article_count = article_count + 1
+          WHERE id IN (${Prisma.join(addedTagIds.map((tid) => Prisma.sql`${tid}::uuid`))})
+        `;
+      }
+    }
+
+    return this.prisma.article.findUnique({
+      where: { id },
+      include: {
+        author: { select: AUTHOR_PUBLIC_FIELDS },
+        tags: true,
+      },
+    });
+  }
+
+  // ─── Draft: List Current User's Drafts ──────────────
+
+  async getMyDrafts(userId: string, page: number, pageSize: number) {
+    const where = {
+      authorId: userId,
+      status: 'DRAFT' as const,
+      deletedAt: null,
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.article.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          summary: true,
+          coverImage: true,
+          status: true,
+          viewCount: true,
+          likeCount: true,
+          commentCount: true,
+          readTimeMinutes: true,
+          publishedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          author: { select: AUTHOR_PUBLIC_FIELDS },
+          tags: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              color: true,
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.article.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
 }

@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
 // Swagger 接口文档装饰器
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -17,6 +18,8 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request, Response, CookieOptions } from 'express';
 // 登录注册刷新业务服务层
 import { AuthService } from './auth.service';
+// JWT 工具，用于解码 Bearer Token 提取 deviceId
+import { JwtService } from '@nestjs/jwt';
 // 注册接口入参DTO
 import { RegisterDto } from './dto/register.dto';
 // 登录接口入参DTO
@@ -75,7 +78,10 @@ const CLEAR_COOKIE_OPTIONS: CookieOptions = {
 @ApiTags('Auth') // Swagger文档分组标签
 @Controller('auth') // 路由统一前缀 /api/v1/auth
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   /**
    * 用户注册接口
@@ -250,13 +256,26 @@ export class AuthController {
   /**
    * 查询当前用户所有活跃登录设备会话列表
    * 用于个人中心「登录设备管理」页面展示所有在线终端
+   * 从 Bearer Token 解码当前 deviceId，标记 isCurrent 供前端识别"本机"
    * @param userId 当前登录用户ID
+   * @param authorization 请求头 Authorization: Bearer <accessToken>
    */
   @Get('sessions')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  getSessions(@CurrentUser('id') userId: string) {
-    return this.authService.getSessions(userId);
+  getSessions(
+    @CurrentUser('id') userId: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    // 从 Bearer Token 中解码 deviceId（不验签，仅提取载荷）
+    let currentDeviceId: string | null = null;
+    if (authorization?.startsWith('Bearer ')) {
+      try {
+        const payload = this.jwtService.decode(authorization.slice(7)) as { deviceId?: string } | null;
+        currentDeviceId = payload?.deviceId ?? null;
+      } catch { /* 解码失败则不标记 */ }
+    }
+    return this.authService.getSessions(userId, currentDeviceId);
   }
 
   /**

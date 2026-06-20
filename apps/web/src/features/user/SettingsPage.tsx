@@ -59,6 +59,8 @@ export default function SettingsPage() {
     mutationFn: (file: File) => profileApi.uploadAvatar(file),
     onSuccess: (data) => {
       updateUser({ avatar: data.url });
+      // Header 头像也需要同步更新
+      queryClient.invalidateQueries({ queryKey: ['auth-me'] });
     },
   });
 
@@ -66,6 +68,8 @@ export default function SettingsPage() {
     mutationFn: () => profileApi.update({ displayName, bio }),
     onSuccess: (data) => {
       updateUser({ displayName: data.displayName, bio: data.bio });
+      // Header 显示的昵称也需要同步
+      queryClient.invalidateQueries({ queryKey: ['auth-me'] });
       setProfileMessage({ type: 'success', text: '已保存' });
       setTimeout(() => setProfileMessage(null), 2000);
     },
@@ -98,7 +102,16 @@ export default function SettingsPage() {
 
   const revokeDeviceMutation = useMutation({
     mutationFn: (deviceId: string) => authApi.logoutDevice(deviceId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+    onSuccess: (_data, deletedDeviceId) => {
+      // 如果删的是当前设备，立即清理本地 token 并跳转登录页
+      const deletedSession = sessions.find((s) => s.deviceId === deletedDeviceId);
+      if (deletedSession?.isCurrent) {
+        logout();
+        navigate('/login');
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
   });
 
   const logoutAllMutation = useMutation({
@@ -231,19 +244,33 @@ export default function SettingsPage() {
             {sessions.map((session) => (
               <div
                 key={session.deviceId}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                className={`flex items-center justify-between p-3 rounded-lg ${
+                  session.isCurrent ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <PlatformIcon platform={session.platform} />
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{session.deviceName}</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {session.deviceName}
+                      {session.isCurrent && (
+                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                          当前设备
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-500">
                       {session.ip} &middot; 登录于 {timeAgo(session.loginAt)} &middot; 最近活跃 {timeAgo(session.lastActiveAt)}
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => revokeDeviceMutation.mutate(session.deviceId)}
+                  onClick={() => {
+                    if (session.isCurrent) {
+                      if (!confirm('下线当前设备将立即退出登录，确认继续？')) return;
+                    }
+                    revokeDeviceMutation.mutate(session.deviceId);
+                  }}
                   disabled={revokeDeviceMutation.isPending}
                   className="p-1.5 text-gray-400 hover:text-red-500 transition disabled:opacity-50"
                   title="下线此设备"
