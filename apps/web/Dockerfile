@@ -3,6 +3,9 @@ FROM node:22-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
+# Use China npm mirror for faster downloads
+RUN pnpm config set registry https://registry.npmmirror.com
+
 WORKDIR /app
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
