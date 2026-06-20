@@ -8,6 +8,9 @@ RUN pnpm config set registry https://registry.npmmirror.com \
     && pnpm config set fetch-retry-mintimeout 30000 \
     && pnpm config set fetch-retry-maxtimeout 120000
 
+# Prisma engine mirror for China
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
+
 WORKDIR /app
 
 # Copy workspace root files for pnpm install
@@ -34,6 +37,9 @@ RUN pnpm config set registry https://registry.npmmirror.com \
     && pnpm config set fetch-retries 5 \
     && pnpm config set fetch-retry-mintimeout 30000 \
     && pnpm config set fetch-retry-maxtimeout 120000
+
+# Prisma engine mirror for China
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
 
 WORKDIR /app
 
