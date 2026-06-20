@@ -74,7 +74,7 @@ export default function MyDraftsPage() {
                     <div className="mt-2 flex items-center gap-3 text-xs text-gray-400">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {formatDate(draft.updatedAt || draft.createdAt)}
+                        {formatDate(draft.createdAt)}
                       </span>
                       {draft.tags.length > 0 && (
                         <span>

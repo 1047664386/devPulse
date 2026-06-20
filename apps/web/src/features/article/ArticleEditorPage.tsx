@@ -20,7 +20,7 @@ import {
   Tag,
   Check,
 } from 'lucide-react';
-import type { ArticleDetail, Tag as TagType } from '@/types/api';
+import type { ArticleDetail, ArticleStatus, Tag as TagType } from '@/types/api';
 
 export default function ArticleEditorPage() {
   const navigate = useNavigate();
@@ -89,7 +89,7 @@ export default function ArticleEditorPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { title?: string; content?: string; summary?: string; status?: string; tagIds?: string[]; version: number } }) =>
+    mutationFn: ({ id, data }: { id: string; data: { title?: string; content?: string; summary?: string; status?: ArticleStatus; tagIds?: string[]; version: number } }) =>
       articleApi.update(id, data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['article', data.slug] });
