@@ -26,6 +26,50 @@ import RolesManagePage from '@/features/admin/RolesManagePage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import PermissionsManagePage from '@/features/admin/PermissionsManagePage';
 
+
+// 所有import放最顶部...
+
+// 模块全局变量，标记是否已注册监听，防止热更新重复绑定
+let unhandledRejectionHandler: ((e: PromiseRejectionEvent) => void) | null = null;
+let globalErrorHandler: ((e: ErrorEvent) => void) | null = null;
+
+// 统一注册监听函数
+function registerGlobalErrorListeners() {
+  // 避免重复注册
+  if (unhandledRejectionHandler || globalErrorHandler) return;
+
+  unhandledRejectionHandler = (event) => {
+    console.error('【全局异步未捕获异常】', event.reason, event.promise);
+    event.preventDefault();
+  };
+
+  globalErrorHandler = (e) => {
+    console.error('【全局同步运行时异常】', e.message, e.filename, e.lineno, e.error?.stack);
+  };
+
+  window.addEventListener('unhandledrejection', unhandledRejectionHandler);
+  window.addEventListener('error', globalErrorHandler);
+}
+
+// 统一移除监听函数
+function removeGlobalErrorListeners() {
+  if (unhandledRejectionHandler) {
+    window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
+    unhandledRejectionHandler = null;
+  }
+  if (globalErrorHandler) {
+    window.removeEventListener('error', globalErrorHandler);
+    globalErrorHandler = null;
+  }
+}
+
+// 执行注册
+registerGlobalErrorListeners();
+
+// 关键：监听页面卸载/刷新时清除监听
+window.addEventListener('beforeunload', removeGlobalErrorListeners);
+
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
