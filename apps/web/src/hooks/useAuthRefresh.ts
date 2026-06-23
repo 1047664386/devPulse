@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/lib/api-services';
@@ -32,7 +33,10 @@ export function useAuthRefresh() {
   });
 
   // 服务端返回最新 user → 覆盖本地缓存
-  if (data) {
-    setUser(data);
-  }
+  // 必须在 useEffect 中更新状态，不能在渲染期间直接调用 setUser
+  useEffect(() => {
+    if (data) {
+      setUser(data);
+    }
+  }, [data, setUser]);
 }
