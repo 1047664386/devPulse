@@ -69,3 +69,28 @@ export const useAuthStore = create<AuthState>((set) => ({
       return { user: updated };
     }),
 }));
+
+// ─── 跨标签页同步 ─────────────────────────────────────────
+// 当一个标签页登出（清除 localStorage），其他标签页通过 storage 事件感知到变化，
+// 自动同步状态并提示用户。这是 GitHub / Notion 等产品的标准做法。
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    const store = useAuthStore.getState();
+    // accessToken 被移除 = 另一个标签页执行了登出
+    if (e.key === 'accessToken' && !e.newValue) {
+      queryClient.clear();
+      store.setUser(null);
+      alert('登录态已过期，请重新登录');
+      window.location.href = '/login';
+    }
+    // user 对象被其他标签页更新（如修改了个人资料）
+    if (e.key === 'user' && e.newValue) {
+      try {
+        const user = JSON.parse(e.newValue) as User;
+        store.setUser(user);
+      } catch {
+        // 忽略解析失败
+      }
+    }
+  });
+}
