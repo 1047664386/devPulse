@@ -7,9 +7,9 @@ import { authApi } from '@/lib/api-services';
  * 认证状态后台刷新 Hook（Stale-While-Revalidate 模式）
  *
  * 业内标准做法（GitHub / Vercel / Linear 均采用）：
- * 1. sessionStorage 缓存 user 对象 → 页面刷新瞬间 UI 即可渲染，无闪烁
+ * 1. localStorage 缓存 user 对象 → 页面刷新瞬间 UI 即可渲染，无闪烁
  * 2. App 启动后静默调用 GET /auth/me → 获取服务端最新用户数据
- * 3. 成功 → 用新数据覆盖 store + sessionStorage 缓存
+ * 3. 成功 → 用新数据覆盖 store + localStorage 缓存
  * 4. 失败（401）→ axios 拦截器自动尝试 refresh token，
  *    如果 refresh 也失败 → clearAuth() 跳转登录页
  *

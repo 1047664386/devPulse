@@ -10,7 +10,7 @@ const api = axios.create({
 
 // Attach accessToken to every request
 api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('accessToken');
+  const token = localStorage.getItem('accessToken');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -57,16 +57,16 @@ api.interceptors.response.use(
 
     try {
       // 分层兼容：Cookie 模式下浏览器自动携带 refreshToken，body 作为兜底
-      const refreshToken = sessionStorage.getItem('refreshToken');
+      const refreshToken = localStorage.getItem('refreshToken');
       const { data } = await axios.post('/api/v1/auth/refresh', 
         refreshToken ? { refreshToken } : {},
         { withCredentials: true },
       );
       const payload = data.data || data;
-      sessionStorage.setItem('accessToken', payload.accessToken);
+      localStorage.setItem('accessToken', payload.accessToken);
       // refreshToken 可能从 body 更新（兼容模式），Cookie 模式下由浏览器自动管理
       if (payload.refreshToken) {
-        sessionStorage.setItem('refreshToken', payload.refreshToken);
+        localStorage.setItem('refreshToken', payload.refreshToken);
       }
       processQueue(null);
       return api(original);
@@ -94,9 +94,9 @@ function processQueue(error: unknown) {
 
 function clearAuth() {
   queryClient.clear();
-  sessionStorage.removeItem('accessToken');
-  sessionStorage.removeItem('refreshToken');
-  sessionStorage.removeItem('user');
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
   window.location.href = '/login';
 }
 

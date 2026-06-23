@@ -57,7 +57,7 @@ export default function MainLayout() {
 
   const handleLogout = async () => {
     // 先通知后端单设备下线，再清除本地状态
-    const refreshToken = sessionStorage.getItem('refreshToken');
+    const refreshToken = localStorage.getItem('refreshToken');
     try {
       await authApi.logout(refreshToken ?? undefined);
     } catch {
