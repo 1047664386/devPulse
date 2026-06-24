@@ -107,7 +107,7 @@ export default function PermissionsManagePage() {
     if (!original) return false;
     const originalIds = new Set(original.permissions.map((p) => p.id));
     const editIds = edits[roleId];
-    if (originalIds.size !== editIds.size) return true;
+    if (!editIds || originalIds.size !== editIds.size) return true;
     for (const id of originalIds) {
       if (!editIds.has(id)) return true;
     }
