@@ -7,8 +7,10 @@ import {
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
+  Sse,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Observable } from 'rxjs';
 import { NotificationService } from './notification.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -36,6 +38,13 @@ export class NotificationController {
     return this.notificationService.getUnreadCount(userId);
   }
 
+  // ─── SSE stream (real-time push) ───────────────────
+  // 使用 JwtAuthGuard 鉴权（前端用 fetch + Authorization Header 消费 SSE）
+  @Sse('stream')
+  stream(@CurrentUser('id') userId: string): Observable<MessageEvent> {
+    return this.notificationService.createStream(userId);
+  }
+
   // ─── Mark all as read ──────────────────────────────
   @Put('read-all')
   markAllAsRead(@CurrentUser('id') userId: string) {
@@ -44,10 +53,7 @@ export class NotificationController {
 
   // ─── Mark single as read ──────────────────────────
   @Put(':id/read')
-  markAsRead(
-    @Param('id') id: string,
-    @CurrentUser('id') userId: string,
-  ) {
+  markAsRead(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.notificationService.markAsRead(id, userId);
   }
 }

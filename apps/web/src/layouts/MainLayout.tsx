@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthRefresh } from '@/hooks/useAuthRefresh';
+import { useNotificationSSE } from '@/hooks/useNotificationSSE';
 import { hasRole, canCreateArticle } from '@/types/api';
 import { notificationApi, authApi } from '@/lib/api-services';
 import { cn, resolveUploadUrl } from '@/lib/utils';
@@ -47,11 +48,13 @@ export default function MainLayout() {
   // 认证状态后台刷新：本地缓存先渲染 UI，后台静默拉取最新用户数据
   useAuthRefresh();
 
+  // SSE 实时通知：替代轮询，服务器有新通知时主动推送
+  useNotificationSSE();
+
   const { data: unreadData } = useQuery({
     queryKey: ['unread-count'],
     queryFn: notificationApi.unreadCount,
     enabled: isAuthenticated,
-    refetchInterval: 30_000,
   });
   const unreadCount = unreadData?.count ?? 0;
 

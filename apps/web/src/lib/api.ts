@@ -68,6 +68,8 @@ api.interceptors.response.use(
       if (payload.refreshToken) {
         localStorage.setItem('refreshToken', payload.refreshToken);
       }
+      // 通知 SSE 等组件 token 已更新，需要重建连接
+      window.dispatchEvent(new CustomEvent('accessTokenUpdated'));
       processQueue(null);
       return api(original);
     } catch (refreshError) {

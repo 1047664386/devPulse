@@ -1,6 +1,8 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import { Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 
 interface NotificationJobData {
   type: string;
@@ -13,7 +15,12 @@ interface NotificationJobData {
 
 @Processor('notification')
 export class NotificationProcessor extends WorkerHost {
-  constructor(private prisma: PrismaService) {
+  private readonly logger = new Logger(NotificationProcessor.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private notificationService: NotificationService,
+  ) {
     super();
   }
 
@@ -25,9 +32,9 @@ export class NotificationProcessor extends WorkerHost {
       return;
     }
 
-    await this.prisma.notification.create({
+    const notification = await this.prisma.notification.create({
       data: {
-        type: type as any,
+        type: type as never,
         recipientId,
         actorId,
         articleId,
@@ -35,5 +42,11 @@ export class NotificationProcessor extends WorkerHost {
         content,
       },
     });
+
+    // 通过 Redis Pub/Sub 实时推送给在线用户的 SSE 连接
+    await this.notificationService.publishNotification(recipientId, notification);
+    await this.notificationService.publishUnreadUpdate(recipientId);
+
+    this.logger.debug(`通知已创建并推送: type=${type}, recipient=${recipientId}`);
   }
 }
