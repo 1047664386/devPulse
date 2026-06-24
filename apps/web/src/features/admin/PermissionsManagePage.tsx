@@ -1,4 +1,4 @@
-import { useState, useCallback, Fragment } from 'react';
+import { useState, useCallback, Fragment, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api-services';
 import type { RoleDetail } from '@/types/api';
@@ -45,19 +45,22 @@ export default function PermissionsManagePage() {
   const [savedRoleId, setSavedRoleId] = useState<string | null>(null);
 
   // Initialize edits from server data
-  const initEdits = useCallback(() => {
+  const syncEditsWithRoles = useCallback(() => {
     if (!rolesData) return;
-    const map: Record<string, Set<string>> = {};
-    for (const role of rolesData) {
-      map[role.id] = new Set(role.permissions.map((p) => p.id));
-    }
-    setEdits(map);
+    setEdits((prev) => {
+      const map = prev ?? {};
+      for (const role of rolesData) {
+        if (!map[role.id]) {
+          map[role.id] = new Set(role.permissions.map((p) => p.id));
+        }
+      }
+      return { ...map };
+    });
   }, [rolesData]);
 
-  // Start editing
-  if (edits === null && rolesData) {
-    initEdits();
-  }
+  useEffect(() => {
+    syncEditsWithRoles();
+  }, [syncEditsWithRoles]);
 
   const togglePermission = (roleId: string, permId: string) => {
     if (!edits) return;
