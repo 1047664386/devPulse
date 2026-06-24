@@ -67,7 +67,7 @@ export default function PermissionsManagePage() {
     setEdits((prev) => {
       if (!prev) return prev;
       const next = { ...prev };
-      const set = new Set(next[roleId]);
+      const set = new Set(next[roleId] ?? []);
       if (set.has(permId)) {
         set.delete(permId);
       } else {
@@ -90,7 +90,7 @@ export default function PermissionsManagePage() {
 
   const saveRole = (roleId: string) => {
     if (!edits) return;
-    const permissionIds = [...edits[roleId]];
+    const permissionIds = edits[roleId] ? [...edits[roleId]] : [];
     saveMutation.mutate({ roleId, permissionIds });
   };
 
